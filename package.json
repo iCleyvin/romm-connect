@@ -1,0 +1,35 @@
+{
+  "name": "romm-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-navigation/bottom-tabs": "^7.15.9",
+    "@react-navigation/native": "^7.2.2",
+    "@react-navigation/native-stack": "^7.14.10",
+    "axios": "^1.14.0",
+    "expo": "55.0.10-canary-20260328-2049187",
+    "expo-file-system": "^55.0.13-canary-20260328-2049187",
+    "expo-linear-gradient": "55.0.10-canary-20260328-2049187",
+    "expo-sharing": "^55.0.15-canary-20260328-2049187",
+    "expo-status-bar": "55.0.5-canary-20260328-2049187",
+    "react": "19.2.0",
+    "react-native": "0.83.4",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
+    "react-native-vector-icons": "^10.3.0",
+    "react-native-webview": "^13.16.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}
