@@ -1,6 +1,6 @@
 // by Cleyvin
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -46,7 +46,7 @@ const RomGalleryScreen = () => {
         order_dir: 'asc',
       });
       const items = data.items || [];
-      setRoms(append ? [...roms, ...items] : items);
+      setRoms(prev => append ? [...prev, ...items] : items);
       setTotal(data.total || 0);
       setOffset(currentOffset + items.length);
     } catch (err) {

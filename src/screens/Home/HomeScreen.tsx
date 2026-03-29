@@ -126,7 +126,7 @@ const HomeScreen = () => {
           </TouchableOpacity>
           {/* Upload Button */}
           <TouchableOpacity
-            onPress={() => navigation.navigate('Upload' as any)}
+            onPress={() => navigation.navigate('Upload')}
             style={[styles.headerButton, { backgroundColor: colors.topLayer }]}
           >
             <MaterialCommunityIcons name="upload" size={22} color={colors.accent} />

@@ -42,7 +42,7 @@ const CollectionCard = ({ collection, onPress }: Props) => {
         <View style={styles.metaRow}>
           <MaterialCommunityIcons name="disc" size={12} color={colors.textSecondary} />
           <Text style={[styles.count, { color: colors.textSecondary }]}>
-            {collection.rom_count || collection.roms?.length || 0} ROMs
+            {collection.rom_count ?? collection.roms?.length ?? 0} ROMs
           </Text>
           {collection.is_favorite && (
             <MaterialCommunityIcons name="star" size={14} color={colors.warning} style={{ marginLeft: 8 }} />

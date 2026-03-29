@@ -27,10 +27,12 @@ export const createApiClient = (config: ServerConfig): AxiosInstance => {
 
   apiClient.interceptors.request.use(async (reqConfig: InternalAxiosRequestConfig) => {
     if (!currentTokens) {
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-      if (stored) {
-        currentTokens = JSON.parse(stored);
-      }
+      try {
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
+        if (stored) {
+          currentTokens = JSON.parse(stored);
+        }
+      } catch {}
     }
     if (currentTokens?.access_token) {
       reqConfig.headers.Authorization = `Bearer ${currentTokens.access_token}`;

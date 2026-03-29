@@ -7,5 +7,5 @@ export { getRoms, getRom, searchRoms, getRomDownloadUrl } from './roms';
 export { getCollections, getCollection } from './collections';
 export { getStats } from './stats';
 export { getSaves, uploadSave, downloadSave } from './saves';
-export { scanAllPlatforms, scanPlatform, runCleanup } from './tasks';
+export { scanAllPlatforms, runCleanup } from './tasks';
 export { uploadRom } from './upload';

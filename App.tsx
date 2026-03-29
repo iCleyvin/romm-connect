@@ -8,7 +8,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 export default function App() {
   return (
     <AppProvider>
-      <StatusBar style="light" />
+      <StatusBar style="auto" />
       <AppNavigator />
     </AppProvider>
   );

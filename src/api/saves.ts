@@ -42,7 +42,7 @@ export const uploadSave = async (
   return response.data;
 };
 
-export const downloadSave = async (saveId: number): Promise<string> => {
+export const downloadSave = async (saveId: number): Promise<ArrayBuffer> => {
   const client = getApiClient();
   const response = await client.get(`/api/saves/${saveId}/content`, {
     responseType: 'arraybuffer',

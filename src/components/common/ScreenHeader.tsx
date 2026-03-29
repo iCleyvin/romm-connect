@@ -21,7 +21,7 @@ const ScreenHeader = ({ title, subtitle, onBack, rightAction }: Props) => {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.surface, paddingTop: insets.top + 8 }]}>
+    <View style={[styles.container, { backgroundColor: colors.surface, paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
       <View style={styles.row}>
         {onBack ? (
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -57,7 +57,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   row: {
     flexDirection: 'row',

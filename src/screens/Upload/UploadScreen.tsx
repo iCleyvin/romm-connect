@@ -36,10 +36,14 @@ const UploadScreen = () => {
   }, []);
 
   const pickFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: '*/*' });
-    if (!result.canceled && result.assets?.[0]) {
-      const asset = result.assets[0];
-      setSelectedFile({ uri: asset.uri, name: asset.name, size: asset.size || 0 });
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*' });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        setSelectedFile({ uri: asset.uri, name: asset.name, size: asset.size || 0 });
+      }
+    } catch {
+      Alert.alert('Error', 'Could not open file picker');
     }
   };
 
