@@ -13,7 +13,11 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as DocumentPicker from 'expo-document-picker';
+// Lazy import to avoid crash if native module not available in standalone APK
+let DocumentPicker: any = null;
+try {
+  DocumentPicker = require('expo-document-picker');
+} catch {}
 import { useApp } from '../../store/AppContext';
 import { getPlatforms, uploadRom } from '../../api';
 import { Platform as PlatformType, RootStackParamList } from '../../types';
@@ -36,6 +40,10 @@ const UploadScreen = () => {
   }, []);
 
   const pickFile = async () => {
+    if (!DocumentPicker) {
+      Alert.alert('Not Available', 'File picker is not available in this build. Use Expo Go for uploads.');
+      return;
+    }
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: '*/*' });
       if (!result.canceled && result.assets?.[0]) {

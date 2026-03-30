@@ -16,7 +16,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+// Lazy import to avoid crash if native module not linked
+let FileSystem: any = null;
+try {
+  FileSystem = require('expo-file-system');
+} catch {}
 import { useApp } from '../../store/AppContext';
 import { useCredentials } from '../../hooks/useAuthHeaders';
 import { getRom, getBaseUrl } from '../../api';
@@ -69,6 +73,10 @@ const RomDetailScreen = () => {
 
   const handleDownload = async () => {
     if (!rom || !serverConfig) return;
+    if (!FileSystem) {
+      Alert.alert('Not Available', 'Download is not available in this build. Use Expo Go.');
+      return;
+    }
     setDownloading(true);
     try {
       const storedTokens = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
