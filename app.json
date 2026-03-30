@@ -2,10 +2,10 @@
   "expo": {
     "name": "RoMM Connect",
     "slug": "romm-connect",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -23,11 +23,17 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.cleyvin.rommconnect",
-      "predictiveBackGestureEnabled": false,
+      "versionCode": 3,
+      "permissions": [
+        "INTERNET"
+      ],
       "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-document-picker"
+    ]
   }
 }
