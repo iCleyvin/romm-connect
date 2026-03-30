@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -150,10 +151,36 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
+        {/* Donate */}
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Support</Text>
+        <View style={[styles.card, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+          <View style={styles.donateSection}>
+            <MaterialCommunityIcons name="heart" size={32} color={colors.accent} />
+            <Text style={[styles.donateTitle, { color: colors.text }]}>
+              Love RoMM Connect?
+            </Text>
+            <Text style={[styles.donateText, { color: colors.textSecondary }]}>
+              This app is free and open source. Your donation helps keep development going and means the world to me.
+            </Text>
+            <TouchableOpacity
+              style={[styles.donateButton, { backgroundColor: colors.accent }]}
+              onPress={() => {
+                Linking.openURL('https://www.paypal.com/donate/?hosted_button_id=&business=cleyvin@hotmail.com&currency_code=USD');
+              }}
+            >
+              <MaterialCommunityIcons name="hand-heart" size={20} color="#fff" />
+              <Text style={styles.donateButtonText}>Donate via PayPal</Text>
+            </TouchableOpacity>
+            <Text style={[styles.donateThank, { color: colors.primary }]}>
+              Thank you for your generosity!
+            </Text>
+          </View>
+        </View>
+
         {/* About */}
         <View style={styles.aboutSection}>
           <Text style={[styles.aboutTitle, { color: colors.textSecondary }]}>RoMM Connect</Text>
-          <Text style={[styles.aboutVersion, { color: colors.gray }]}>v1.0.0</Text>
+          <Text style={[styles.aboutVersion, { color: colors.gray }]}>v0.1.5b</Text>
           <Text style={[styles.aboutFooter, { color: colors.gray }]}>
             A mobile client for RoMM ROM Manager
           </Text>
@@ -272,6 +299,43 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
     marginTop: spacing.md,
+  },
+  donateSection: {
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  donateTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    marginTop: spacing.sm,
+  },
+  donateText: {
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    lineHeight: 20,
+    paddingHorizontal: spacing.sm,
+  },
+  donateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.md,
+  },
+  donateButtonText: {
+    color: '#fff',
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  donateThank: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    marginTop: spacing.md,
+    fontStyle: 'italic',
   },
 });
 

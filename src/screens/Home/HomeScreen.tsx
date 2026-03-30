@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -227,6 +228,25 @@ const HomeScreen = () => {
           </ScrollView>
         </View>
       )}
+
+      {/* Donation Card */}
+      <View style={[styles.donationCard, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+        <MaterialCommunityIcons name="heart" size={28} color={colors.accent} />
+        <Text style={[styles.donationTitle, { color: colors.text }]}>Support RoMM Connect</Text>
+        <Text style={[styles.donationText, { color: colors.textSecondary }]}>
+          This app is free and open source. If you enjoy it, consider buying the developer a coffee!
+        </Text>
+        <TouchableOpacity
+          style={[styles.donationButton, { backgroundColor: colors.accent }]}
+          onPress={() => {
+            Linking.openURL('https://www.paypal.com/donate/?hosted_button_id=&business=cleyvin@hotmail.com&currency_code=USD');
+          }}
+        >
+          <MaterialCommunityIcons name="hand-heart" size={18} color="#fff" />
+          <Text style={styles.donationButtonText}>Donate via PayPal</Text>
+        </TouchableOpacity>
+        <Text style={[styles.donationFooter, { color: colors.gray }]}>by Cleyvin @ 2026</Text>
+      </View>
     </ScrollView>
   );
 };
@@ -333,6 +353,44 @@ const styles = StyleSheet.create({
   },
   platformChipText: { fontSize: fontSize.sm, fontWeight: '600', marginLeft: 6, maxWidth: 100 },
   platformChipCount: { fontSize: fontSize.xs, marginLeft: 6 },
+  donationCard: {
+    margin: spacing.md,
+    marginTop: spacing.xl,
+    padding: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  donationTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    marginTop: spacing.sm,
+  },
+  donationText: {
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    lineHeight: 20,
+  },
+  donationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.md,
+  },
+  donationButtonText: {
+    color: '#fff',
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  donationFooter: {
+    fontSize: fontSize.xs,
+    marginTop: spacing.sm,
+  },
 });
 
 export default HomeScreen;
