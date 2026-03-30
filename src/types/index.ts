@@ -142,6 +142,8 @@ export interface StatsResponse {
   TOTAL_FILESIZE_BYTES: number;
 }
 
+export type GameStatus = 'INCOMPLETE' | 'FINISHED' | 'COMPLETED_100' | 'RETIRED' | 'NEVER_PLAYING' | null;
+
 export type RootStackParamList = {
   ServerConfig: undefined;
   Login: undefined;

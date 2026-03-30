@@ -22,7 +22,7 @@ try {
   FileSystem = require('expo-file-system');
 } catch {}
 import { useApp } from '../../store/AppContext';
-import { getRom, getBaseUrl } from '../../api';
+import { getRom, getBaseUrl, getApiClient } from '../../api';
 import { STORAGE_KEYS } from '../../constants';
 import { Rom, RootStackParamList } from '../../types';
 import { getCoverUrl, getRomCoverUrl, formatFileSize } from '../../utils';
@@ -213,54 +213,95 @@ const RomDetailScreen = () => {
             </View>
           )}
 
-          {/* User Status */}
+          {/* Your Progress - Interactive */}
           {rom.rom_user && (
             <View style={[styles.userStatusCard, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
               <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Your Progress</Text>
-              <View style={styles.statusRow}>
-                {rom.rom_user.last_played && (
-                  <View style={styles.statusItem}>
-                    <MaterialCommunityIcons name="clock-outline" size={16} color={colors.info} />
-                    <Text style={[styles.statusText, { color: colors.text }]}>
-                      Last played: {new Date(rom.rom_user.last_played).toLocaleDateString()}
-                    </Text>
-                  </View>
-                )}
-                {rom.rom_user.now_playing && (
-                  <View style={styles.statusItem}>
-                    <MaterialCommunityIcons name="play-circle" size={16} color={colors.success} />
-                    <Text style={[styles.statusText, { color: colors.success }]}>
-                      Now Playing
-                    </Text>
-                  </View>
-                )}
-                {rom.rom_user.status && (
-                  <View style={styles.statusItem}>
-                    <MaterialCommunityIcons name="flag" size={16} color={colors.primary} />
-                    <Text style={[styles.statusText, { color: colors.text }]}>
-                      {rom.rom_user.status.replace(/_/g, ' ')}
-                    </Text>
-                  </View>
-                )}
-                {rom.rom_user.rating != null && rom.rom_user.rating > 0 && (
-                  <View style={styles.statusItem}>
-                    <MaterialCommunityIcons name="star" size={16} color={colors.warning} />
-                    <Text style={[styles.statusText, { color: colors.text }]}>
-                      {rom.rom_user.rating}/10
-                    </Text>
-                  </View>
-                )}
-                {rom.rom_user.completion != null && rom.rom_user.completion > 0 && (
-                  <View style={styles.statusItem}>
-                    <MaterialCommunityIcons name="percent" size={16} color={colors.success} />
-                    <Text style={[styles.statusText, { color: colors.text }]}>
-                      {rom.rom_user.completion}%
-                    </Text>
-                  </View>
-                )}
+
+              {/* Last Played & Now Playing */}
+              {rom.rom_user.last_played && (
+                <View style={styles.statusItem}>
+                  <MaterialCommunityIcons name="clock-outline" size={16} color={colors.info} />
+                  <Text style={[styles.statusText, { color: colors.text }]}>
+                    Last played: {new Date(rom.rom_user.last_played).toLocaleDateString()}
+                  </Text>
+                </View>
+              )}
+              {rom.rom_user.now_playing && (
+                <View style={styles.statusItem}>
+                  <MaterialCommunityIcons name="play-circle" size={16} color={colors.success} />
+                  <Text style={[styles.statusText, { color: colors.success }]}>Now Playing</Text>
+                </View>
+              )}
+
+              {/* Interactive Rating (1-5 stars) */}
+              <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>Rating</Text>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={async () => {
+                      const newRating = star * 2; // RoMM uses 0-10 scale
+                      try {
+                        const client = getApiClient();
+                        await client.put(`/api/roms/${rom.id}/props`, { rating: newRating });
+                        setRom({ ...rom, rom_user: { ...rom.rom_user!, rating: newRating } });
+                      } catch {}
+                    }}
+                  >
+                    <MaterialCommunityIcons
+                      name={(rom.rom_user.rating || 0) >= star * 2 ? 'star' : 'star-outline'}
+                      size={28}
+                      color={colors.warning}
+                    />
+                  </TouchableOpacity>
+                ))}
+                <Text style={[styles.ratingText, { color: colors.textSecondary }]}>
+                  {rom.rom_user.rating ? `${rom.rom_user.rating}/10` : ''}
+                </Text>
               </View>
+
+              {/* Game Status Selector */}
+              <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>Status</Text>
+              <View style={styles.statusChips}>
+                {[
+                  { value: null, label: 'None', icon: 'minus-circle-outline' },
+                  { value: 'INCOMPLETE', label: 'Playing', icon: 'gamepad-variant' },
+                  { value: 'FINISHED', label: 'Finished', icon: 'flag-checkered' },
+                  { value: 'COMPLETED_100', label: '100%', icon: 'trophy' },
+                  { value: 'RETIRED', label: 'Retired', icon: 'archive' },
+                ].map((s) => (
+                  <TouchableOpacity
+                    key={s.label}
+                    onPress={async () => {
+                      try {
+                        const client = getApiClient();
+                        await client.put(`/api/roms/${rom.id}/props`, { status: s.value });
+                        setRom({ ...rom, rom_user: { ...rom.rom_user!, status: s.value as any } });
+                      } catch {}
+                    }}
+                    style={[
+                      styles.statusChip,
+                      {
+                        backgroundColor: rom.rom_user.status === s.value ? colors.primary + '30' : colors.surface,
+                        borderColor: rom.rom_user.status === s.value ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={s.icon as any}
+                      size={14}
+                      color={rom.rom_user.status === s.value ? colors.primary : colors.textSecondary}
+                    />
+                    <Text style={[styles.statusChipText, { color: rom.rom_user.status === s.value ? colors.primary : colors.textSecondary }]}>
+                      {s.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
               {!rom.rom_user.last_played && !rom.rom_user.status && (
-                <Text style={[styles.statusText, { color: colors.gray, marginTop: 4 }]}>
+                <Text style={[styles.statusText, { color: colors.gray, marginTop: 8 }]}>
                   Not played yet. Tap Play ROM to start!
                 </Text>
               )}
@@ -461,11 +502,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 16,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   statusText: {
     fontSize: fontSize.md,
     marginLeft: 6,
+  },
+  ratingLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginTop: spacing.sm,
+    marginBottom: 4,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  ratingText: {
+    fontSize: fontSize.sm,
+    marginLeft: 8,
+  },
+  statusChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.round,
+    borderWidth: 1,
+  },
+  statusChipText: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   screenshotsSection: {
     marginBottom: spacing.md,

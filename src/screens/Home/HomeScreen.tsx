@@ -1,6 +1,6 @@
 // by Cleyvin
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,14 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../../store/AppContext';
-import { getStats, getPlatforms, getRoms, scanAllPlatforms } from '../../api';
+import { getStats, getPlatforms, getRoms, scanAllPlatforms, searchRoms } from '../../api';
 import { StatsResponse, Platform, Rom, RootStackParamList } from '../../types';
 import { formatFileSize } from '../../utils';
 import { spacing, borderRadius, fontSize } from '../../theme';
@@ -34,6 +35,9 @@ const HomeScreen = () => {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Rom[]>([]);
+  const [searching, setSearching] = useState(false);
   const [scanning, setScanning] = useState(false);
 
   const fetchData = async () => {
@@ -74,6 +78,23 @@ const HomeScreen = () => {
     setRefreshing(true);
     fetchData();
   };
+
+  // Global search with debounce
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchRoms(searchQuery.trim());
+        setSearchResults(results);
+      } catch { setSearchResults([]); }
+      setSearching(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const [scanStatus, setScanStatus] = useState('');
 
@@ -143,6 +164,44 @@ const HomeScreen = () => {
         </View>
       </View>
 
+      {/* Global Search */}
+      <View style={[styles.searchBar, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.textSecondary} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.text }]}
+          placeholder="Search all ROMs..."
+          placeholderTextColor={colors.placeholder}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.gray} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Search Results */}
+      {searchQuery.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <MaterialCommunityIcons name="magnify" size={20} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              {searching ? 'Searching...' : `Results (${searchResults.length})`}
+            </Text>
+          </View>
+          {searchResults.length > 0 ? (
+            <View style={styles.romGrid}>
+              {searchResults.map((rom) => (
+                <RomCard key={rom.id} rom={rom} onPress={() => navigation.navigate('RomDetail', { romId: rom.id })} />
+              ))}
+            </View>
+          ) : !searching ? (
+            <Text style={[styles.noResults, { color: colors.gray }]}>No ROMs found</Text>
+          ) : null}
+        </View>
+      )}
+
       {/* Scan Status */}
       {scanStatus ? (
         <View style={styles.scanStatus}>
@@ -156,7 +215,7 @@ const HomeScreen = () => {
         <View style={styles.statsGrid}>
           <StatCard colors={colors} icon="gamepad-variant" label="Platforms" value={(stats.PLATFORMS ?? 0).toString()} color={colors.primary} />
           <StatCard colors={colors} icon="disc" label="ROMs" value={(stats.ROMS ?? 0).toString()} color={colors.accent} />
-          <StatCard colors={colors} icon="content-save" label="Saves" value={(stats.SAVES ?? 0).toString()} color={colors.success} />
+          <StatCard colors={colors} icon="content-save" label="Saves" value={((stats.SAVES ?? 0) + (stats.STATES ?? 0)).toString()} color={colors.success} />
           <StatCard colors={colors} icon="harddisk" label="Total Size" value={formatFileSize(stats.TOTAL_FILESIZE_BYTES ?? 0)} color={colors.info} />
         </View>
       )}
@@ -292,6 +351,26 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    paddingHorizontal: 12,
+    height: 44,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: fontSize.md,
+  },
+  noResults: {
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
+    fontSize: fontSize.md,
   },
   scanStatus: {
     flexDirection: 'row',
