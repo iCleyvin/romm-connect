@@ -180,7 +180,7 @@ const SettingsScreen = () => {
         {/* About */}
         <View style={styles.aboutSection}>
           <Text style={[styles.aboutTitle, { color: colors.textSecondary }]}>RoMM Connect</Text>
-          <Text style={[styles.aboutVersion, { color: colors.gray }]}>v0.1.5b</Text>
+          <Text style={[styles.aboutVersion, { color: colors.gray }]}>v0.2.0</Text>
           <Text style={[styles.aboutFooter, { color: colors.gray }]}>
             A mobile client for RoMM ROM Manager
           </Text>

@@ -6,6 +6,11 @@ import { Colors, ThemeColors, ThemeMode } from '../theme';
 import { STORAGE_KEYS } from '../constants';
 import { User, ServerConfig } from '../types';
 
+interface Credentials {
+  username: string;
+  password: string;
+}
+
 interface AppContextType {
   theme: ThemeMode;
   colors: ThemeColors;
@@ -14,6 +19,10 @@ interface AppContextType {
   setUser: (user: User | null) => void;
   serverConfig: ServerConfig | null;
   setServerConfig: (config: ServerConfig | null) => void;
+  credentials: Credentials | null;
+  setCredentials: (creds: Credentials | null) => void;
+  authToken: string | null;
+  setAuthToken: (token: string | null) => void;
   isReady: boolean;
 }
 
@@ -23,6 +32,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [user, setUser] = useState<User | null>(null);
   const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
+  const [credentials, setCredentials] = useState<Credentials | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   const colors = Colors[theme];
@@ -30,15 +41,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const init = async () => {
       try {
-        const [storedTheme, storedConfig, storedUser] = await Promise.all([
+        const [storedTheme, storedConfig, storedUser, storedTokens, storedCreds] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.THEME),
           AsyncStorage.getItem(STORAGE_KEYS.SERVER_CONFIG),
           AsyncStorage.getItem(STORAGE_KEYS.USER),
+          AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS),
+          AsyncStorage.getItem('@romm_credentials'),
         ]);
         if (storedTheme === 'light' || storedTheme === 'dark') setTheme(storedTheme);
         if (storedConfig) setServerConfig(JSON.parse(storedConfig));
         if (storedUser) setUser(JSON.parse(storedUser));
-      } catch {}
+        if (storedTokens) {
+          try { setAuthToken(JSON.parse(storedTokens).access_token); } catch {}
+        }
+        if (storedCreds) {
+          try { setCredentials(JSON.parse(storedCreds)); } catch {}
+        }
+      } catch (e) {
+        console.warn('AppContext init error:', e);
+      }
       setIsReady(true);
     };
     init();
@@ -52,7 +73,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AppContext.Provider
-      value={{ theme, colors, toggleTheme, user, setUser, serverConfig, setServerConfig, isReady }}
+      value={{
+        theme, colors, toggleTheme,
+        user, setUser,
+        serverConfig, setServerConfig,
+        credentials, setCredentials,
+        authToken, setAuthToken,
+        isReady,
+      }}
     >
       {children}
     </AppContext.Provider>

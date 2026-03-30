@@ -38,20 +38,24 @@ const HomeScreen = () => {
 
   const fetchData = async () => {
     try {
-      const [statsData, platformsData, recentData, playedData] = await Promise.all([
+      const [statsData, platformsData, recentData] = await Promise.all([
         getStats(),
         getPlatforms(),
         getRoms({ limit: 12, order_by: 'updated_at', order_dir: 'desc' }),
-        getRoms({ limit: 6, order_by: 'last_played', order_dir: 'desc' }),
       ]);
       setStats(statsData);
       setPlatforms(platformsData);
       setRecentRoms(recentData.items || []);
-      // Filter only ROMs that have been played
-      const played = (playedData.items || []).filter(
-        (r: Rom) => r.rom_user?.last_played
-      );
-      setRecentlyPlayed(played);
+      // Separate call for recently played (may not be supported in all versions)
+      try {
+        const playedData = await getRoms({ limit: 6, order_by: 'last_played', order_dir: 'desc' });
+        const played = (playedData.items || []).filter(
+          (r: Rom) => r.rom_user?.last_played
+        );
+        setRecentlyPlayed(played);
+      } catch {
+        // last_played ordering not supported, skip
+      }
     } catch (err) {
       console.error('Failed to fetch home data:', err);
     } finally {

@@ -4,7 +4,6 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../store/AppContext';
-import { useAuthHeaders } from '../../hooks/useAuthHeaders';
 import { Platform } from '../../types';
 import { getCoverUrl, formatFileSize } from '../../utils';
 import { borderRadius, spacing } from '../../theme';
@@ -16,7 +15,6 @@ interface Props {
 
 const PlatformCard = ({ platform, onPress }: Props) => {
   const { colors, serverConfig } = useApp();
-  const authHeaders = useAuthHeaders();
   const logoUrl = platform.url_logo?.startsWith('http') ? platform.url_logo : getCoverUrl(serverConfig, platform.url_logo);
 
   return (
@@ -27,7 +25,7 @@ const PlatformCard = ({ platform, onPress }: Props) => {
     >
       <View style={styles.iconContainer}>
         {logoUrl ? (
-          <Image source={{ uri: logoUrl, headers: authHeaders }} style={styles.logo} resizeMode="contain" />
+          <Image source={{ uri: logoUrl }} style={styles.logo} resizeMode="contain" />
         ) : (
           <MaterialCommunityIcons name="gamepad-variant" size={48} color={colors.primary} />
         )}

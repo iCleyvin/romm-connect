@@ -33,14 +33,19 @@ const PlayScreen = () => {
 
   // Mark as playing
   useEffect(() => {
-    const client = getApiClient();
-    client.put(`/api/roms/${romId}/props`, {
-      now_playing: true, last_played: new Date().toISOString(),
-    }).catch(() => {});
-    return () => {
+    try {
+      const client = getApiClient();
       client.put(`/api/roms/${romId}/props`, {
-        now_playing: false, last_played: new Date().toISOString(),
+        now_playing: true, last_played: new Date().toISOString(),
       }).catch(() => {});
+    } catch {}
+    return () => {
+      try {
+        const client = getApiClient();
+        client.put(`/api/roms/${romId}/props`, {
+          now_playing: false, last_played: new Date().toISOString(),
+        }).catch(() => {});
+      } catch {}
     };
   }, [romId]);
 

@@ -22,7 +22,6 @@ try {
   FileSystem = require('expo-file-system');
 } catch {}
 import { useApp } from '../../store/AppContext';
-import { useCredentials } from '../../hooks/useAuthHeaders';
 import { getRom, getBaseUrl } from '../../api';
 import { STORAGE_KEYS } from '../../constants';
 import { Rom, RootStackParamList } from '../../types';
@@ -34,8 +33,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const RomDetailScreen = () => {
-  const { colors, serverConfig } = useApp();
-  const credentials = useCredentials();
+  const { colors, serverConfig, credentials } = useApp();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'RomDetail'>>();
   const { romId } = route.params;
@@ -50,8 +48,9 @@ const RomDetailScreen = () => {
         setRom(data);
       } catch (err) {
         console.error('Failed to fetch ROM:', err);
-        Alert.alert('Error', 'Failed to load ROM details');
-        navigation.goBack();
+        Alert.alert('Error', 'Failed to load ROM details', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
       } finally {
         setLoading(false);
       }

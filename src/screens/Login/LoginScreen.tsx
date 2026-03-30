@@ -18,7 +18,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../../store/AppContext';
 import { login, getCurrentUser } from '../../api';
-import { saveCredentials } from '../../hooks/useAuthHeaders';
 import { STORAGE_KEYS } from '../../constants';
 import { RootStackParamList } from '../../types';
 import { spacing, borderRadius, fontSize } from '../../theme';
@@ -28,7 +27,7 @@ type Props = {
 };
 
 const LoginScreen = ({ navigation }: Props) => {
-  const { colors, setUser } = useApp();
+  const { colors, setUser, setCredentials, setAuthToken } = useApp();
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -48,7 +47,10 @@ const LoginScreen = ({ navigation }: Props) => {
     try {
       const tokens = await login(username.trim(), password);
       await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKENS, JSON.stringify(tokens));
-      await saveCredentials(username.trim(), password);
+      setAuthToken(tokens.access_token);
+      const creds = { username: username.trim(), password };
+      setCredentials(creds);
+      await AsyncStorage.setItem('@romm_credentials', JSON.stringify(creds));
 
       const userData = await getCurrentUser();
       setUser(userData);

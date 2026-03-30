@@ -4,7 +4,6 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Dimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../store/AppContext';
-import { useCredentials } from '../../hooks/useAuthHeaders';
 import { Rom } from '../../types';
 import { getRomCoverUrl, formatFileSize } from '../../utils';
 import { borderRadius, spacing } from '../../theme';
@@ -21,8 +20,7 @@ interface Props {
 }
 
 const RomCard = ({ rom, onPress, aspectRatio = '2/3' }: Props) => {
-  const { colors, serverConfig } = useApp();
-  const credentials = useCredentials();
+  const { colors, serverConfig, credentials } = useApp();
   const coverUrl = getRomCoverUrl(serverConfig, rom, credentials || undefined);
 
   const parts = aspectRatio.split('/');

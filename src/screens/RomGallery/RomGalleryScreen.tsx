@@ -58,10 +58,14 @@ const RomGalleryScreen = () => {
     }
   };
 
+  // Debounce search to avoid firing on every keystroke
   useEffect(() => {
-    setLoading(true);
-    setOffset(0);
-    fetchRoms(0, false);
+    const timer = setTimeout(() => {
+      setLoading(true);
+      setOffset(0);
+      fetchRoms(0, false);
+    }, 400);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const onRefresh = () => {
