@@ -4,6 +4,10 @@ A mobile client for [RoMM](https://github.com/rommapp/romm) (ROM Manager) - brow
 
 **by Cleyvin @ 2026**
 
+[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://www.paypal.com/donate/?hosted_button_id=&business=cleyvin@hotmail.com&currency_code=USD)
+
+> This app is free and open source. If you enjoy it, consider supporting the developer!
+
 ---
 
 ## Screenshots
@@ -158,6 +162,14 @@ RoMM Connect communicates with RoMM via its REST API:
 - **User**: `GET /api/users/me`, `PUT /api/roms/{id}/props`
 - **Collections**: `GET /api/collections`
 - **Assets**: `GET /api/raw/assets/{path}` (covers, logos)
+
+---
+
+## Support the Project
+
+If RoMM Connect has been useful to you, consider making a donation. Every contribution helps keep the project alive!
+
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://www.paypal.com/donate/?hosted_button_id=&business=cleyvin@hotmail.com&currency_code=USD)
 
 ---
 
