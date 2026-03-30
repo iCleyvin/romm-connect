@@ -68,6 +68,16 @@ export interface Rom {
   igdb_id?: number;
   moby_id?: number;
   rom_user?: RomUser;
+  files?: RomFile[];
+  has_multiple_files?: boolean;
+}
+
+export interface RomFile {
+  id: number;
+  rom_id: number;
+  file_name: string;
+  file_path: string;
+  file_size_bytes: number;
 }
 
 export interface RomUser {
@@ -138,7 +148,7 @@ export type RootStackParamList = {
   Main: undefined;
   RomDetail: { romId: number; platformSlug?: string };
   RomGallery: { platformId: number; platformName: string; platformSlug: string };
-  Play: { romId: number; romName: string; romFsName: string; platformSlug: string };
+  Play: { romId: number; romName: string; romFsName: string; platformSlug: string; fileIds?: number[] };
   Upload: undefined;
 };
 

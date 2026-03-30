@@ -23,7 +23,7 @@ const PlayScreen = () => {
   const { colors, serverConfig } = useApp();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Play'>>();
-  const { romId, romName, romFsName, platformSlug } = route.params;
+  const { romId, romName, romFsName, platformSlug, fileIds } = route.params;
   const [loading, setLoading] = useState(true);
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const webViewRef = useRef<WebView>(null);
@@ -129,29 +129,48 @@ const PlayScreen = () => {
           const latest = states.sort((a: any, b: any) =>
             new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
           )[0];
-          // Download state binary
-          const stateRes = await client.get(`/api/states/${latest.id}/content/${encodeURIComponent(latest.file_name)}`, {
-            responseType: 'arraybuffer',
-          });
-          // Convert to base64
-          const bytes = new Uint8Array(stateRes.data);
-          let binary = '';
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-          const base64 = btoa(binary);
-          // Send to WebView
+          // Download state binary via download_path
+          // The download_path has single-encoded chars (%3A, %20) but the server
+          // expects double-encoded (%253A, %2520) so we re-encode the percent signs
+          let downloadPath = latest.download_path || `/api/raw/assets/${latest.full_path}`;
+          // Remove query string (timestamp) and re-encode the path
+          const qsIdx = downloadPath.indexOf('?');
+          if (qsIdx > 0) downloadPath = downloadPath.substring(0, qsIdx);
+          // Re-encode: %XX -> %25XX (double encode special chars in filename)
+          downloadPath = downloadPath.replace(/%([0-9A-Fa-f]{2})/g, '%25$1');
+          const storedT = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
+          const authH = storedT ? `Bearer ${JSON.parse(storedT).access_token}` : '';
+          const downloadUrl = `${baseUrl}${downloadPath}`;
+
+          // Use fetch inside WebView for binary download
           webViewRef.current?.injectJavaScript(`
             (function(){
-              var b64 = '${base64}';
-              var bin = atob(b64);
-              var arr = new Uint8Array(bin.length);
-              for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
-              window.EJS_emulator.gameManager.loadState(arr);
-              window.EJS_emulator.play();
-              var n = document.createElement('div');
-              n.style.cssText = 'position:fixed;top:10px;right:10px;background:#8B74E8;color:#fff;padding:8px 16px;border-radius:8px;font:bold 13px sans-serif;z-index:99999;';
-              n.textContent = 'State loaded from server';
-              document.body.appendChild(n);
-              setTimeout(function(){n.remove()},2000);
+              var stage = document.createElement('div');
+              stage.style.cssText = 'position:fixed;top:10px;right:10px;background:#8B74E8;color:#fff;padding:8px 16px;border-radius:8px;font:bold 13px sans-serif;z-index:99999;';
+              stage.textContent = 'Loading state...';
+              document.body.appendChild(stage);
+
+              fetch('${downloadUrl}', {
+                headers: { 'Authorization': '${authH}' }
+              })
+              .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.arrayBuffer();
+              })
+              .then(function(buf) {
+                var arr = new Uint8Array(buf);
+                window.EJS_emulator.gameManager.loadState(arr);
+                window.EJS_emulator.play();
+                stage.textContent = 'State loaded from server';
+                stage.style.background = '#3FB950';
+                setTimeout(function(){stage.remove()},2000);
+              })
+              .catch(function(e) {
+                stage.textContent = 'Load failed: ' + e.message;
+                stage.style.background = '#DA3633';
+                setTimeout(function(){stage.remove()},3000);
+                window.EJS_emulator.play();
+              });
             })();
             true;
           `);
@@ -209,7 +228,8 @@ const PlayScreen = () => {
       const storedTokens = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
       const tokens = storedTokens ? JSON.parse(storedTokens) : null;
       const authHeader = tokens ? `Bearer ${tokens.access_token}` : '';
-      const romUrl = `${baseUrl}/api/roms/${romId}/content/${encodeURIComponent(romFsName)}`;
+      const fileIdsParam = fileIds && fileIds.length > 0 ? `?file_ids=${fileIds.join(',')}` : '';
+      const romUrl = `${baseUrl}/api/roms/${romId}/content/${encodeURIComponent(romFsName)}${fileIdsParam}`;
 
       const html = `
 <!DOCTYPE html>
@@ -328,11 +348,43 @@ const PlayScreen = () => {
     }
 
     // === Download ROM and start ===
+    // Override XMLHttpRequest to inject auth header for EmulatorJS ROM fetch
+    var origXHROpen = XMLHttpRequest.prototype.open;
+    var origXHRSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      this._romUrl = (typeof url === 'string' && url.indexOf('/api/roms/') >= 0);
+      return origXHROpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function() {
+      if (this._romUrl) {
+        this.setRequestHeader('Authorization', '${authHeader}');
+      }
+      return origXHRSend.apply(this, arguments);
+    };
+
+    // Also override fetch for auth
+    var origFetch = window.fetch;
+    window.fetch = function(url, opts) {
+      opts = opts || {};
+      if (typeof url === 'string' && url.indexOf('/api/') >= 0 && !opts.headers) {
+        opts.headers = { 'Authorization': '${authHeader}' };
+      } else if (typeof url === 'string' && url.indexOf('/api/') >= 0 && opts.headers && !opts.headers['Authorization']) {
+        opts.headers['Authorization'] = '${authHeader}';
+      }
+      return origFetch.call(this, url, opts);
+    };
+
     (async function() {
       try {
-        var res = await fetch('${romUrl}', { headers: { 'Authorization': '${authHeader}' } });
+        // First check ROM size to decide strategy
+        document.getElementById('stage').textContent = 'Checking ROM...';
+        var headRes = await origFetch('${romUrl}', { method: 'HEAD', headers: { 'Authorization': '${authHeader}' } });
+        var romSize = parseInt(headRes.headers.get('content-length') || '0');
+
+        // Always download with progress, but use ArrayBuffer for efficiency
+        document.getElementById('stage').textContent = 'Downloading ROM...';
+        var res = await origFetch('${romUrl}', { headers: { 'Authorization': '${authHeader}' } });
         if (!res.ok) throw new Error('ROM download failed: ' + res.status);
-        var contentLength = parseInt(res.headers.get('content-length') || '0');
         var reader = res.body.getReader();
         var chunks = [], received = 0;
         while (true) {
@@ -340,12 +392,23 @@ const PlayScreen = () => {
           if (result.done) break;
           chunks.push(result.value);
           received += result.value.length;
-          if (contentLength > 0) updateProgress((received/contentLength)*85, received, contentLength);
+          if (romSize > 0) updateProgress((received/romSize)*85, received, romSize);
           else document.getElementById('progressSize').textContent = formatBytes(received);
         }
-        var blob = new Blob(chunks);
+        // Merge chunks into single ArrayBuffer (more memory efficient than Blob)
+        var totalLen = chunks.reduce(function(s,c){return s+c.length;}, 0);
+        var merged = new Uint8Array(totalLen);
+        var offset = 0;
+        for (var i=0; i<chunks.length; i++) {
+          merged.set(chunks[i], offset);
+          offset += chunks[i].length;
+        }
+        chunks = null; // Free chunk references
+        var blob = new Blob([merged]);
+        merged = null; // Free merged array
         window.EJS_gameUrl = URL.createObjectURL(blob);
-        updateProgress(90, received, contentLength);
+
+        updateProgress(90, 0, 0);
         document.getElementById('stage').textContent = 'Starting emulator...';
 
         var script = document.createElement('script');

@@ -60,14 +60,29 @@ const RomDetailScreen = () => {
   }, [romId]);
 
   const [downloading, setDownloading] = useState(false);
+  const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
+
+  // Auto-select .cue file or first track for multi-file ROMs
+  useEffect(() => {
+    if (rom?.files && rom.files.length > 1 && !selectedFileId) {
+      const cueFile = rom.files.find((f: any) => f.file_name.toLowerCase().endsWith('.cue'));
+      const firstBin = rom.files.find((f: any) =>
+        f.file_name.toLowerCase().endsWith('.bin') || f.file_name.toLowerCase().endsWith('.iso')
+      );
+      setSelectedFileId(cueFile?.id || firstBin?.id || rom.files[0].id);
+    }
+  }, [rom?.files]);
 
   const handlePlay = () => {
     if (!rom) return;
+    // For multi-file ROMs, always pass a file_id to avoid huge ZIP download
+    const fileIds = selectedFileId ? [selectedFileId] : undefined;
     navigation.navigate('Play', {
       romId: rom.id,
       romName: rom.name,
       romFsName: rom.fs_name,
       platformSlug: rom.platform_slug || '',
+      fileIds,
     });
   };
 
@@ -270,6 +285,43 @@ const RomDetailScreen = () => {
             </View>
           )}
 
+          {/* File Selector for multi-file ROMs */}
+          {rom.files && rom.files.length > 1 && (
+            <View style={[styles.fileSelector, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Select File</Text>
+              {rom.files
+                .filter((f: any) => !f.file_name.endsWith('.txt'))
+                .map((f: any) => (
+                <TouchableOpacity
+                  key={f.id}
+                  onPress={() => setSelectedFileId(f.id === selectedFileId ? null : f.id)}
+                  style={[
+                    styles.fileOption,
+                    {
+                      backgroundColor: selectedFileId === f.id ? colors.primary + '30' : 'transparent',
+                      borderColor: selectedFileId === f.id ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name={selectedFileId === f.id ? 'radiobox-marked' : 'radiobox-blank'}
+                    size={18}
+                    color={selectedFileId === f.id ? colors.primary : colors.gray}
+                  />
+                  <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
+                    {f.file_name}
+                  </Text>
+                  <Text style={[styles.fileSize, { color: colors.textSecondary }]}>
+                    {formatFileSize(f.file_size_bytes)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <Text style={[styles.fileHint, { color: colors.textSecondary }]}>
+                Select the .cue file for best compatibility
+              </Text>
+            </View>
+          )}
+
           {/* Play Button */}
           <TouchableOpacity
             style={[styles.playButton, { backgroundColor: colors.success }]}
@@ -424,6 +476,35 @@ const styles = StyleSheet.create({
     height: 112,
     borderRadius: borderRadius.md,
     marginRight: spacing.sm,
+  },
+  fileSelector: {
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+  },
+  fileOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    marginTop: spacing.xs,
+  },
+  fileName: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    marginLeft: 8,
+  },
+  fileSize: {
+    fontSize: fontSize.xs,
+    marginLeft: 4,
+  },
+  fileHint: {
+    fontSize: fontSize.xs,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
   playButton: {
     flexDirection: 'row',
