@@ -1,8 +1,8 @@
 // by Cleyvin
 
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { WebView } from 'react-native-webview';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, StyleSheet, ActivityIndicator, AppState, Alert } from 'react-native';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,7 +16,7 @@ const CORE_MAP: Record<string, string> = {
   nes: 'nes', snes: 'snes', n64: 'n64', gb: 'gb', gba: 'gba', gbc: 'gb',
   nds: 'nds', psx: 'psx', psp: 'psp', genesis: 'segaMD', sega_genesis: 'segaMD',
   megadrive: 'segaMD', sms: 'segaMS', sega_master_system: 'segaMS',
-  arcade: 'mame2003', mame: 'mame2003', atari2600: 'atari2600', atari7800: 'atari7800',
+  arcade: 'mame2003', mame: 'mame2003',
 };
 
 const PlayScreen = () => {
@@ -31,29 +31,178 @@ const PlayScreen = () => {
   const baseUrl = serverConfig ? getBaseUrl(serverConfig) : '';
   const core = CORE_MAP[platformSlug] || 'nes';
 
+  // Mark as playing
   useEffect(() => {
-    const markPlaying = async () => {
-      try {
-        const client = getApiClient();
-        await client.put(`/api/roms/${romId}/props`, {
-          now_playing: true,
-          last_played: new Date().toISOString(),
-        });
-      } catch {}
-    };
-    markPlaying();
+    const client = getApiClient();
+    client.put(`/api/roms/${romId}/props`, {
+      now_playing: true, last_played: new Date().toISOString(),
+    }).catch(() => {});
     return () => {
-      (async () => {
-        try {
-          const client = getApiClient();
-          await client.put(`/api/roms/${romId}/props`, {
-            now_playing: false,
-            last_played: new Date().toISOString(),
-          });
-        } catch {}
-      })();
+      client.put(`/api/roms/${romId}/props`, {
+        now_playing: false, last_played: new Date().toISOString(),
+      }).catch(() => {});
     };
   }, [romId]);
+
+  // Handle messages from WebView (save/load operations)
+  const handleMessage = useCallback(async (event: WebViewMessageEvent) => {
+    let msg: any;
+    try { msg = JSON.parse(event.nativeEvent.data); } catch { return; }
+
+    const client = getApiClient();
+
+    switch (msg.type) {
+      case 'SAVE_STATE': {
+        // Upload state to RoMM server
+        try {
+          const formData = new FormData();
+          formData.append('stateFile', {
+            uri: `data:application/octet-stream;base64,${msg.state}`,
+            type: 'application/octet-stream',
+            name: `${romName}.state`,
+          } as any);
+          if (msg.screenshot) {
+            formData.append('screenshotFile', {
+              uri: `data:image/png;base64,${msg.screenshot}`,
+              type: 'image/png',
+              name: `${romName}.png`,
+            } as any);
+          }
+          await client.post(`/api/states?rom_id=${romId}&emulator=${core}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 30000,
+          });
+          // Notify WebView save succeeded
+          webViewRef.current?.injectJavaScript(`
+            if (document.getElementById('saveNotif')) document.getElementById('saveNotif').remove();
+            var n = document.createElement('div');
+            n.id = 'saveNotif';
+            n.style.cssText = 'position:fixed;top:10px;right:10px;background:#3FB950;color:#fff;padding:8px 16px;border-radius:8px;font:bold 13px sans-serif;z-index:99999;opacity:0.95;';
+            n.textContent = 'State saved to server';
+            document.body.appendChild(n);
+            setTimeout(function(){n.remove()},2000);
+            true;
+          `);
+        } catch (err) {
+          console.error('Failed to upload state:', err);
+        }
+        break;
+      }
+
+      case 'SAVE_FILE': {
+        // Upload SRAM save to RoMM server
+        try {
+          const formData = new FormData();
+          formData.append('saveFile', {
+            uri: `data:application/octet-stream;base64,${msg.save}`,
+            type: 'application/octet-stream',
+            name: `${romName}.srm`,
+          } as any);
+          await client.post(`/api/saves?rom_id=${romId}&emulator=${core}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 30000,
+          });
+        } catch (err) {
+          console.error('Failed to upload save:', err);
+        }
+        break;
+      }
+
+      case 'LOAD_STATE_REQUEST': {
+        // Fetch latest state from server and send to WebView
+        try {
+          const statesRes = await client.get(`/api/states?rom_id=${romId}`);
+          const states = statesRes.data || [];
+          if (states.length === 0) {
+            webViewRef.current?.injectJavaScript(`
+              window.EJS_emulator.play();
+              var n = document.createElement('div');
+              n.style.cssText = 'position:fixed;top:10px;right:10px;background:#DA3633;color:#fff;padding:8px 16px;border-radius:8px;font:bold 13px sans-serif;z-index:99999;';
+              n.textContent = 'No saved states found';
+              document.body.appendChild(n);
+              setTimeout(function(){n.remove()},2000);
+              true;
+            `);
+            return;
+          }
+          // Get most recent state
+          const latest = states.sort((a: any, b: any) =>
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+          )[0];
+          // Download state binary
+          const stateRes = await client.get(`/api/states/${latest.id}/content/${encodeURIComponent(latest.file_name)}`, {
+            responseType: 'arraybuffer',
+          });
+          // Convert to base64
+          const bytes = new Uint8Array(stateRes.data);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const base64 = btoa(binary);
+          // Send to WebView
+          webViewRef.current?.injectJavaScript(`
+            (function(){
+              var b64 = '${base64}';
+              var bin = atob(b64);
+              var arr = new Uint8Array(bin.length);
+              for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+              window.EJS_emulator.gameManager.loadState(arr);
+              window.EJS_emulator.play();
+              var n = document.createElement('div');
+              n.style.cssText = 'position:fixed;top:10px;right:10px;background:#8B74E8;color:#fff;padding:8px 16px;border-radius:8px;font:bold 13px sans-serif;z-index:99999;';
+              n.textContent = 'State loaded from server';
+              document.body.appendChild(n);
+              setTimeout(function(){n.remove()},2000);
+            })();
+            true;
+          `);
+        } catch (err) {
+          console.error('Failed to load state:', err);
+          webViewRef.current?.injectJavaScript(`
+            window.EJS_emulator.play();
+            true;
+          `);
+        }
+        break;
+      }
+
+      case 'AUTO_SAVE': {
+        // Background auto-save (state + sram)
+        try {
+          if (msg.state) {
+            const formData = new FormData();
+            formData.append('stateFile', {
+              uri: `data:application/octet-stream;base64,${msg.state}`,
+              type: 'application/octet-stream',
+              name: `${romName}.state`,
+            } as any);
+            await client.post(`/api/states?rom_id=${romId}&emulator=${core}`, formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            });
+          }
+        } catch {}
+        break;
+      }
+    }
+  }, [romId, romName, core]);
+
+  // Auto-save when app goes to background
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' && webViewRef.current) {
+        webViewRef.current.injectJavaScript(`
+          (function(){
+            try {
+              var stateData = window.EJS_emulator.gameManager.getState();
+              var b64 = uint8ToBase64(stateData);
+              sendToRN('AUTO_SAVE', { state: b64 });
+            } catch(e) {}
+          })();
+          true;
+        `);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     const buildHtml = async () => {
@@ -64,14 +213,13 @@ const PlayScreen = () => {
 
       const html = `
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>${romName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0D1117; width: 100vw; height: 100vh; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+    body { background: #0D1117; width: 100vw; height: 100vh; overflow: hidden; }
     #game { width: 100%; height: 100%; }
     .loader {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -80,7 +228,7 @@ const PlayScreen = () => {
     .loader-title { color: #FEFDFE; font-size: 18px; font-weight: 700; margin-bottom: 8px; }
     .loader-subtitle { color: #8B949E; font-size: 13px; margin-bottom: 20px; }
     .progress-bar { width: 100%; height: 8px; background: #30363D; border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; background: linear-gradient(90deg, #6043C8, #8B74E8, #A18FFF); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #6043C8, #8B74E8, #A18FFF); border-radius: 4px; transition: width 0.3s; width: 0%; }
     .progress-text { color: #8B74E8; font-size: 14px; font-weight: 600; margin-top: 10px; }
     .progress-size { color: #5D5D5D; font-size: 11px; margin-top: 4px; }
   </style>
@@ -88,7 +236,7 @@ const PlayScreen = () => {
 <body>
   <div id="game"></div>
   <div class="loader" id="loader">
-    <div class="loader-title">${romName.replace(/</g, '&lt;').replace(/'/g, '&#39;')}</div>
+    <div class="loader-title">${romName.replace(/</g, '&lt;')}</div>
     <div class="loader-subtitle" id="stage">Downloading ROM...</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="progress-text" id="progressText">0%</div>
@@ -96,111 +244,122 @@ const PlayScreen = () => {
   </div>
 
   <script>
-    const AUTH = '${authHeader}';
-    const BASE_URL = '${baseUrl}';
-    const ROM_ID = ${romId};
-
-    function formatBytes(bytes) {
-      if (bytes === 0) return '0 B';
-      const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    // === Base64 helpers ===
+    function uint8ToBase64(u8) {
+      var bin = '';
+      for (var i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+      return btoa(bin);
+    }
+    function base64ToUint8(b64) {
+      var bin = atob(b64);
+      var arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
     }
 
-    function updateProgress(pct, loaded, total) {
-      document.getElementById('progressFill').style.width = pct + '%';
-      document.getElementById('progressText').textContent = Math.round(pct) + '%';
-      if (total > 0) {
-        document.getElementById('progressSize').textContent = formatBytes(loaded) + ' / ' + formatBytes(total);
+    // === Bridge: WebView -> React Native ===
+    function sendToRN(type, payload) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({ type: type }, payload)));
       }
     }
 
-    (async () => {
+    // === Progress ===
+    function formatBytes(b) {
+      if (b===0) return '0 B';
+      var k=1024, s=['B','KB','MB','GB'], i=Math.floor(Math.log(b)/Math.log(k));
+      return parseFloat((b/Math.pow(k,i)).toFixed(1))+' '+s[i];
+    }
+    function updateProgress(pct, loaded, total) {
+      document.getElementById('progressFill').style.width = pct+'%';
+      document.getElementById('progressText').textContent = Math.round(pct)+'%';
+      if (total>0) document.getElementById('progressSize').textContent = formatBytes(loaded)+' / '+formatBytes(total);
+    }
+
+    // === EmulatorJS Config ===
+    window.EJS_player = '#game';
+    window.EJS_core = '${core}';
+    window.EJS_color = '#8B74E8';
+    window.EJS_startOnLoaded = true;
+    window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+    window.EJS_fixedSaveInterval = 10000; // Flush SRAM every 10s
+
+    // === Save State -> Upload to server ===
+    window.EJS_onSaveState = function(data) {
       try {
-        // Download ROM with progress
-        const res = await fetch('${romUrl}', { headers: { 'Authorization': AUTH } });
-        if (!res.ok) throw new Error('Failed to fetch ROM: ' + res.status);
-
-        const contentLength = parseInt(res.headers.get('content-length') || '0');
-        const reader = res.body.getReader();
-        const chunks = [];
-        let received = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          received += value.length;
-          if (contentLength > 0) {
-            updateProgress((received / contentLength) * 80, received, contentLength);
-          } else {
-            document.getElementById('progressSize').textContent = formatBytes(received);
-          }
+        var stateB64 = uint8ToBase64(new Uint8Array(data.state));
+        var ssB64 = null;
+        if (data.screenshot) {
+          ssB64 = (typeof data.screenshot === 'string') ? data.screenshot : uint8ToBase64(new Uint8Array(data.screenshot));
         }
+        sendToRN('SAVE_STATE', { state: stateB64, screenshot: ssB64 });
+      } catch(e) { console.error('Save state error:', e); }
+    };
 
-        const blob = new Blob(chunks);
-        const romBlobUrl = URL.createObjectURL(blob);
-        updateProgress(80, received, contentLength);
+    // === Load State -> Request from server ===
+    window.EJS_onLoadState = function() {
+      window.EJS_emulator.pause();
+      sendToRN('LOAD_STATE_REQUEST', {});
+    };
 
-        document.getElementById('stage').textContent = 'Loading emulator...';
+    // === SRAM auto-sync ===
+    window.EJS_onSaveSave = function(data) {
+      try {
+        var saveB64 = uint8ToBase64(new Uint8Array(data.save));
+        sendToRN('SAVE_FILE', { save: saveB64 });
+      } catch(e) {}
+    };
 
-        // Configure EmulatorJS
-        window.EJS_player = '#game';
-        window.EJS_core = '${core}';
-        window.EJS_gameUrl = romBlobUrl;
-        window.EJS_gameName = '${romName.replace(/'/g, "\\'")}';
-        window.EJS_color = '#8B74E8';
-        window.EJS_startOnLoaded = true;
-        window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+    // === Game start -> load latest save from server ===
+    window.EJS_onGameStart = function() {
+      document.getElementById('loader').style.display = 'none';
+      // Auto-load latest state will be handled by initial fetch in RN
+    };
 
-        updateProgress(90, 0, 0);
+    // Listen for messages from React Native
+    document.addEventListener('message', function(e) {
+      try { var msg = JSON.parse(e.data); handleRNMsg(msg); } catch(ex) {}
+    });
+    window.addEventListener('message', function(e) {
+      try { var msg = JSON.parse(e.data); handleRNMsg(msg); } catch(ex) {}
+    });
+    function handleRNMsg(msg) {
+      // handled by injectedJavaScript from RN side
+    }
+
+    // === Download ROM and start ===
+    (async function() {
+      try {
+        var res = await fetch('${romUrl}', { headers: { 'Authorization': '${authHeader}' } });
+        if (!res.ok) throw new Error('ROM download failed: ' + res.status);
+        var contentLength = parseInt(res.headers.get('content-length') || '0');
+        var reader = res.body.getReader();
+        var chunks = [], received = 0;
+        while (true) {
+          var result = await reader.read();
+          if (result.done) break;
+          chunks.push(result.value);
+          received += result.value.length;
+          if (contentLength > 0) updateProgress((received/contentLength)*85, received, contentLength);
+          else document.getElementById('progressSize').textContent = formatBytes(received);
+        }
+        var blob = new Blob(chunks);
+        window.EJS_gameUrl = URL.createObjectURL(blob);
+        updateProgress(90, received, contentLength);
         document.getElementById('stage').textContent = 'Starting emulator...';
 
-        // Hide Load State file import button and Save State download button
-        // Keep only slot-based save/load which works without file system
-        const hideStyle = document.createElement('style');
-        hideStyle.textContent = \`
-          /* Hide the file-based load/save buttons in EmulatorJS menu */
-          [data-btn="loadState"], [data-btn="saveState"],
-          a[download], input[type="file"],
-          [title="Load State"], [title="Save State"] {
-            display: none !important;
-          }
-        \`;
-        document.head.appendChild(hideStyle);
-
-        // Intercept any file input click
-        document.addEventListener('click', function(e) {
-          const target = e.target;
-          if (target && target.tagName === 'INPUT' && target.type === 'file') {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          }
-        }, true);
-
-        window.EJS_defaultOptions = { 'save-state-slot': 1 };
-
-
-        const script = document.createElement('script');
+        var script = document.createElement('script');
         script.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
-        script.onload = () => {
-          updateProgress(100, 0, 0);
-          setTimeout(() => {
-            document.getElementById('loader').style.display = 'none';
-          }, 1000);
-        };
+        script.onload = function() { updateProgress(100, 0, 0); };
         document.body.appendChild(script);
-      } catch (e) {
+      } catch(e) {
         document.getElementById('stage').textContent = 'Error: ' + e.message;
         document.getElementById('stage').style.color = '#DA3633';
-        document.getElementById('progressFill').style.background = '#DA3633';
       }
     })();
   </script>
 </body>
 </html>`;
-
       setHtmlContent(html);
     };
     buildHtml();
@@ -224,6 +383,7 @@ const PlayScreen = () => {
           source={{ html: htmlContent, baseUrl }}
           style={styles.webview}
           onLoadEnd={() => setLoading(false)}
+          onMessage={handleMessage}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           allowsFullscreenVideo={true}
@@ -234,13 +394,6 @@ const PlayScreen = () => {
           allowFileAccess={false}
           allowUniversalAccessFromFileURLs={true}
           setSupportMultipleWindows={false}
-          onFileDownload={() => {}}
-          allowsBackForwardNavigationGestures={false}
-          onShouldStartLoadWithRequest={(request) => {
-            // Block blob downloads and file picker triggers
-            if (request.url.startsWith('blob:')) return false;
-            return true;
-          }}
         />
       )}
     </View>
