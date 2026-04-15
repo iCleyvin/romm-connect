@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cleyvin.rommconnect"
+      "bundleIdentifier": "com.cleyvin.romm_connect"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +22,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.cleyvin.rommconnect",
+      "package": "com.cleyvin.romm_connect",
       "versionCode": 4,
       "permissions": [
         "INTERNET"

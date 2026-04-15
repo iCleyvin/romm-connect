@@ -1,0 +1,109 @@
+name: Build Android AAB
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Release AAB
+    runs-on: [self-hosted, android]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          echo "ANDROID_HOME=/home/cleyvinserv/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=/home/cleyvinserv/android-sdk" >> $GITHUB_ENV
+          echo "/home/cleyvinserv/.nvm/versions/node/v22.22.2/bin" >> $GITHUB_PATH
+          echo "/home/cleyvinserv/android-sdk/platform-tools" >> $GITHUB_PATH
+          echo "/home/cleyvinserv/android-sdk/build-tools/35.0.0" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Expo prebuild
+        run: npx expo prebuild --platform android --clean
+
+      - name: Configure release signing
+        run: |
+          python3 - << 'PYEOF'
+          import re
+
+          props = """
+          def keystoreProps = new Properties()
+          keystoreProps.load(new FileInputStream(rootProject.file("keystore.properties")))
+          """
+
+          signing_block = """
+                  release {
+                      storeFile file(keystoreProps["storeFile"])
+                      storePassword keystoreProps["storePassword"]
+                      keyAlias keystoreProps["keyAlias"]
+                      keyPassword keystoreProps["keyPassword"]
+                  }
+          """
+
+          gradle_path = "android/app/build.gradle"
+          with open(gradle_path, "r") as f:
+              content = f.read()
+
+          # Inject keystore reader before android { block
+          content = content.replace("android {", props + "\nandroid {", 1)
+
+          # Add release signing config inside signingConfigs block
+          content = re.sub(
+              r'(signingConfigs \{)',
+              r'\1' + signing_block,
+              content,
+              count=1
+          )
+
+          # Set release buildType to use release signingConfig
+          content = re.sub(
+              r'(buildTypes \{[^}]*?release \{[^}]*?)(signingConfig signingConfigs\.debug)',
+              r'\1signingConfig signingConfigs.release',
+              content,
+              count=1,
+              flags=re.DOTALL
+          )
+
+          with open(gradle_path, "w") as f:
+              f.write(content)
+
+          print("build.gradle patched for release signing")
+          PYEOF
+
+          # Create keystore.properties
+          printf "%s\n" \
+            "storeFile=/home/cleyvinserv/keystores/romm-connect.keystore" \
+            "storePassword=RommC0nn3ct2026!" \
+            "keyAlias=romm-connect" \
+            "keyPassword=RommC0nn3ct2026!" \
+            > android/keystore.properties
+
+          echo "keystore.properties created"
+
+      - name: Build AAB
+        working-directory: android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Save AAB to server
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          OUTPUT_DIR="/home/cleyvinserv/builds/romm-connect"
+          mkdir -p "$OUTPUT_DIR"
+          cp android/app/build/outputs/bundle/release/app-release.aab \
+            "$OUTPUT_DIR/romm-connect-v${VERSION}-build${{ github.run_number }}.aab"
+          echo "AAB guardado en: $OUTPUT_DIR/romm-connect-v${VERSION}-build${{ github.run_number }}.aab"
+          ls -lh "$OUTPUT_DIR/"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: romm-connect-v${{ github.run_number }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
