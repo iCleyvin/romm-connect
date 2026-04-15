@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { loadCredentials } from '../hooks/useAuthHeaders';
 import { Colors, ThemeColors, ThemeMode } from '../theme';
 import { STORAGE_KEYS } from '../constants';
 import { User, ServerConfig } from '../types';
@@ -46,7 +47,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           AsyncStorage.getItem(STORAGE_KEYS.SERVER_CONFIG),
           AsyncStorage.getItem(STORAGE_KEYS.USER),
           AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS),
-          AsyncStorage.getItem('@romm_credentials'),
+          loadCredentials(),
         ]);
         if (storedTheme === 'light' || storedTheme === 'dark') setTheme(storedTheme);
         if (storedConfig) setServerConfig(JSON.parse(storedConfig));
@@ -54,9 +55,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (storedTokens) {
           try { setAuthToken(JSON.parse(storedTokens).access_token); } catch {}
         }
-        if (storedCreds) {
-          try { setCredentials(JSON.parse(storedCreds)); } catch {}
-        }
+        if (storedCreds) setCredentials(storedCreds);
       } catch (e) {
         console.warn('AppContext init error:', e);
       }

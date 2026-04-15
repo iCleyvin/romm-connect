@@ -16,7 +16,7 @@ li { margin-bottom: 8px; }
 </head>
 <body>
 <h1>RoMM Connect - Privacy Policy</h1>
-<p class="date">Last updated: March 30, 2026</p>
+<p class="date">Last updated: April 15, 2026</p>
 
 <h2>1. Overview</h2>
 <p>RoMM Connect ("the App") is a free, open-source mobile client for RoMM (ROM Manager) servers. This privacy policy explains how we handle your data.</p>
@@ -26,7 +26,7 @@ li { margin-bottom: 8px; }
 <ul>
 <li><strong>Server configuration:</strong> IP address and port of your RoMM server</li>
 <li><strong>Authentication tokens:</strong> OAuth2 access and refresh tokens for API communication</li>
-<li><strong>User credentials:</strong> Username and password stored locally for image authentication</li>
+<li><strong>User credentials:</strong> Username and password stored securely using the platform's Keystore (Android) / Keychain (iOS) via expo-secure-store. Credentials are encrypted at rest and never stored in plaintext.</li>
 <li><strong>Theme preference:</strong> Dark or light mode selection</li>
 </ul>
 
@@ -50,7 +50,8 @@ li { margin-bottom: 8px; }
 </ul>
 
 <h2>6. Data Storage & Security</h2>
-<p>All user data is stored locally on your device using AsyncStorage. Authentication tokens are used to communicate with your RoMM server over your local network or VPN. We recommend using HTTPS for server connections when possible.</p>
+<p>User credentials (username and password) are stored using platform-level encrypted storage (Android Keystore / iOS Keychain) via expo-secure-store. Other app data (server config, auth tokens, theme preference) is stored in standard local device storage. Authentication tokens are used to communicate with your RoMM server over your local network or VPN.</p>
+<p>The app allows connections to servers over HTTP (unencrypted) to support self-hosted servers on private local networks. We recommend using HTTPS when your server is accessible over the internet or a VPN.</p>
 
 <h2>7. Data Deletion</h2>
 <p>You can delete all app data at any time by:</p>

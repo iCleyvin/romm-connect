@@ -2,7 +2,7 @@
   "expo": {
     "name": "RoMM Connect",
     "slug": "romm-connect",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -23,7 +23,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.cleyvin.rommconnect",
-      "versionCode": 3,
+      "versionCode": 4,
       "permissions": [
         "INTERNET"
       ],
@@ -33,7 +33,17 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-document-picker"
+      "expo-document-picker",
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24
+          }
+        }
+      ]
     ]
   }
 }

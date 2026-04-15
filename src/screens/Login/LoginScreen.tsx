@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { saveCredentials } from '../../hooks/useAuthHeaders';
 import { useApp } from '../../store/AppContext';
 import { login, getCurrentUser } from '../../api';
 import { STORAGE_KEYS } from '../../constants';
@@ -50,7 +51,7 @@ const LoginScreen = ({ navigation }: Props) => {
       setAuthToken(tokens.access_token);
       const creds = { username: username.trim(), password };
       setCredentials(creds);
-      await AsyncStorage.setItem('@romm_credentials', JSON.stringify(creds));
+      await saveCredentials(creds.username, creds.password);
 
       const userData = await getCurrentUser();
       setUser(userData);

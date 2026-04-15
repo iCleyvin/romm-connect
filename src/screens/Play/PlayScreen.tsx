@@ -460,7 +460,7 @@ const PlayScreen = () => {
           mixedContentMode="always"
           originWhitelist={['*']}
           allowFileAccess={false}
-          allowUniversalAccessFromFileURLs={true}
+          allowUniversalAccessFromFileURLs={false}
           setSupportMultipleWindows={false}
         />
       )}
