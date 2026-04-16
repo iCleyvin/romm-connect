@@ -4,57 +4,37 @@
 RoMM Connect
 
 ## Short Description (max 80 chars)
-Browse, play, and manage your retro game collection from your RoMM server.
+Unofficial RoMM connector. Browse and play your self-hosted retro game library.
 
 ## Full Description (max 4000 chars)
-RoMM Connect is a free, open-source mobile client for RoMM (ROM Manager) — the popular self-hosted retro game library manager.
+RoMM Connect is an independent mobile client for RoMM (ROM Manager), the open-source self-hosted retro game library manager.
 
-Connect to your RoMM server and enjoy your entire retro gaming collection right from your phone. Browse platforms, discover games, and play them directly on your device using the built-in EmulatorJS emulator.
+DISCLAIMER: This app is NOT official and is NOT affiliated with, endorsed by, or related to the RoMM project or its developers in any way. This is an independent, community-built project.
+
+RoMM Connect lets you connect to YOUR own RoMM server and access YOUR personal library from your phone. It does not distribute, promote, or facilitate obtaining ROMs of any kind.
 
 FEATURES
 
-• Server Connection — Connect to any RoMM server via IP address. Test your connection before saving.
+• Server Connection — Connect to your own RoMM server via IP on your local network or VPN.
 
-• Browse Your Library — View all platforms, search ROMs across your entire collection, and explore with beautiful cover art from IGDB.
+• Browse Your Library — View all platforms, search your collection, and enjoy cover art from IGDB.
 
-• Play Games — Launch any ROM directly from the app. Games run on your phone using EmulatorJS with support for 12+ platforms including NES, SNES, N64, Game Boy, GBA, PlayStation, PSP, Genesis, and Arcade/MAME.
+• Play Games — Launch any ROM directly from the app using the built-in EmulatorJS engine. Supports NES, SNES, N64, Game Boy, GBA, PlayStation, PSP, Genesis, Arcade/MAME, and more.
 
-• Save States — Save and load game states that sync to your RoMM server. Your progress is always backed up. SRAM saves auto-sync every 10 seconds.
+• Cloud Saves — Save states sync to your server. Play on your phone, continue on your PC.
 
-• Cloud Saves — Save states are stored on your server. Play on your phone, continue on your PC, or switch devices without losing progress.
+• Full Management — Upload ROMs, scan your library, manage collections, rate games, and track your progress.
 
-• Upload ROMs — Add new games to your server directly from your phone. Select the platform and pick a file.
-
-• Scan Library — Detect new ROMs on your server and automatically fetch metadata and cover art.
-
-• Multi-File Support — Full support for multi-disc games (PSX .cue/.bin). Select individual tracks or load automatically.
-
-• Rate & Track — Rate games with stars, mark them as Playing, Finished, 100% Complete, or Retired.
-
-• Collections — Browse your ROM collections organized on the server.
-
-• Dark & Light Theme — Beautiful purple-accent theme inspired by the RoMM web interface. Supports both dark and light modes.
-
-• Download ROMs — Save games to your device storage for offline access.
-
-• Recently Played — Quick access to games you've been playing on the home dashboard.
-
-• Global Search — Find any ROM across all platforms instantly.
+• Dark & Light Theme — Beautiful UI inspired by the RoMM web interface.
 
 REQUIREMENTS
 • A self-hosted RoMM server (v3.x or v4.x)
 • Network access to your server (LAN, WiFi, or VPN)
 • Android 7.0 or higher
 
-SUPPORTED PLATFORMS
-NES, SNES, Nintendo 64, Game Boy, Game Boy Color, Game Boy Advance, Nintendo DS, PlayStation (PSX), PSP, Sega Genesis, Sega Master System, Arcade/MAME, Atari 2600
+Open source under MIT License — github.com/iCleyvin/romm-connect
 
-OPEN SOURCE
-RoMM Connect is fully open source under the MIT license. View the source code, report issues, or contribute at: github.com/iCleyvin/romm-connect
-
-This app is not affiliated with or endorsed by the RoMM project. RoMM is an independent open-source project available at github.com/rommapp/romm.
-
-by Cleyvin @ 2026
+This project is not affiliated with the RoMM project (github.com/rommapp/romm).
 
 ## Category
 Entertainment
