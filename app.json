@@ -48,7 +48,9 @@
           "android": {
             "targetSdkVersion": 35,
             "minSdkVersion": 24,
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
       ],
