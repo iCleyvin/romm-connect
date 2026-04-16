@@ -4,7 +4,7 @@ A mobile client for [RoMM](https://github.com/rommapp/romm) (ROM Manager) - brow
 
 **by Cleyvin @ 2026**
 
-[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://www.paypal.com/donate/?hosted_button_id=&business=cleyvin@hotmail.com&currency_code=USD)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://www.paypal.com/donate/?hosted_button_id=&business=cleyvinos@gmail.com&currency_code=USD)
 
 > This app is free and open source. If you enjoy it, consider supporting the developer!
 
@@ -169,7 +169,7 @@ RoMM Connect communicates with RoMM via its REST API:
 
 If RoMM Connect has been useful to you, consider making a donation. Every contribution helps keep the project alive!
 
-[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://www.paypal.com/donate/?hosted_button_id=&business=cleyvin@hotmail.com&currency_code=USD)
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge&logo=paypal)](https://www.paypal.com/donate/?hosted_button_id=&business=cleyvinos@gmail.com&currency_code=USD)
 
 ---
 

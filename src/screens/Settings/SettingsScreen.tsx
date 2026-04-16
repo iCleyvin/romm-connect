@@ -165,7 +165,7 @@ const SettingsScreen = () => {
             <TouchableOpacity
               style={[styles.donateButton, { backgroundColor: colors.accent }]}
               onPress={() => {
-                Linking.openURL('https://www.paypal.com/donate/?hosted_button_id=&business=cleyvin@hotmail.com&currency_code=USD');
+                Linking.openURL('https://www.paypal.com/donate/?hosted_button_id=&business=cleyvinos@gmail.com&currency_code=USD');
               }}
             >
               <MaterialCommunityIcons name="hand-heart" size={20} color="#fff" />

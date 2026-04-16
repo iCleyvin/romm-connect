@@ -70,7 +70,7 @@ Entertainment
 IARC: Everyone (no violence, no in-app purchases, no ads, no user-generated content)
 
 ## Contact Email
-cleyvin@hotmail.com
+cleyvinos@gmail.com
 
 ## Privacy Policy URL
 https://icleyvin.github.io/romm-connect/privacy-policy.html
