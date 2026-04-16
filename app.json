@@ -25,7 +25,8 @@
       "package": "com.cleyvin.romm_connect",
       "versionCode": 4,
       "permissions": [
-        "INTERNET"
+        "INTERNET",
+        "CAMERA"
       ],
       "usesCleartextTraffic": true
     },
@@ -34,13 +35,20 @@
     },
     "plugins": [
       "expo-document-picker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow RoMM Connect to scan pairing QR codes from your server."
+        }
+      ],
       "expo-secure-store",
       [
         "expo-build-properties",
         {
           "android": {
             "targetSdkVersion": 35,
-            "minSdkVersion": 24
+            "minSdkVersion": 24,
+            "usesCleartextTraffic": true
           }
         }
       ],

@@ -1,6 +1,7 @@
 // by Cleyvin
 
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiClient, getBaseUrl, setTokens, setApiTokenDirect } from './client';
 import { API_PATHS } from '../constants';
 import { AuthTokens, User, ServerConfig, HeartbeatResponse } from '../types';
@@ -46,4 +47,22 @@ export const logout = async (): Promise<void> => {
   } catch {
     // Ignore logout errors
   }
+};
+
+export const exchangePairingCode = async (code: string): Promise<string> => {
+  const cfg = await AsyncStorage.getItem('@romm_server_config');
+  if (!cfg) throw new Error('No server config');
+  const c = JSON.parse(cfg);
+  const protocol = c.useHttps ? 'https' : 'http';
+  const port = c.port ? `:${c.port}` : '';
+  const baseURL = `${protocol}://${c.host}${port}`;
+  const response = await axios.post(`${baseURL}/api/client-tokens/exchange`, { code }, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 15000,
+  });
+  const rawToken = response.data?.raw_token;
+  if (!rawToken || !rawToken.startsWith('rmm_')) {
+    throw new Error('Invalid response from server');
+  }
+  return rawToken;
 };

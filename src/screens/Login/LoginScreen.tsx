@@ -11,14 +11,16 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { saveCredentials, saveApiToken } from '../../hooks/useAuthHeaders';
 import { useApp } from '../../store/AppContext';
-import { login, loginWithApiToken, getCurrentUser } from '../../api';
+import { login, loginWithApiToken, exchangePairingCode, getCurrentUser } from '../../api';
 import { STORAGE_KEYS } from '../../constants';
 import { RootStackParamList } from '../../types';
 import { spacing, borderRadius, fontSize } from '../../theme';
@@ -28,6 +30,15 @@ type Props = {
 };
 
 type LoginMethod = 'credentials' | 'apitoken';
+
+const extractPairingCode = (scanned: string): string | null => {
+  const cleaned = scanned.trim();
+  const urlMatch = cleaned.match(/[?&]code=([A-Za-z0-9-]+)/);
+  if (urlMatch) return urlMatch[1];
+  const plainMatch = cleaned.match(/^[A-Za-z0-9-]{8,10}$/);
+  if (plainMatch) return cleaned;
+  return null;
+};
 
 const LoginScreen = ({ navigation }: Props) => {
   const { colors, setUser, setCredentials, setAuthToken, setAuthMethod } = useApp();
@@ -40,6 +51,52 @@ const LoginScreen = ({ navigation }: Props) => {
   const [showToken, setShowToken] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+
+  const openScanner = async () => {
+    setError(null);
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        setError('Camera permission is required to scan QR codes');
+        return;
+      }
+    }
+    setScanning(false);
+    setScannerOpen(true);
+  };
+
+  const handleQRScanned = async ({ data }: { data: string }) => {
+    if (scanning) return;
+    setScanning(true);
+
+    const code = extractPairingCode(data);
+    if (!code) {
+      setError('Invalid QR code. Expected a RoMM pairing code.');
+      setScannerOpen(false);
+      setScanning(false);
+      return;
+    }
+
+    try {
+      const rawToken = await exchangePairingCode(code);
+      setApiTokenInput(rawToken);
+      setScannerOpen(false);
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        setError('Pairing code expired. Generate a new one in your RoMM server.');
+      } else if (err.response?.status === 429) {
+        setError('Too many attempts. Wait a moment and try again.');
+      } else {
+        setError(`Failed to exchange pairing code: ${err.message}`);
+      }
+      setScannerOpen(false);
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (loginMethod === 'credentials') {
@@ -124,7 +181,6 @@ const LoginScreen = ({ navigation }: Props) => {
           </Text>
         </View>
 
-        {/* Login method toggle */}
         <View style={[styles.toggleContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
           <TouchableOpacity
             style={[styles.toggleButton, loginMethod === 'credentials' && { backgroundColor: colors.primary }]}
@@ -200,7 +256,13 @@ const LoginScreen = ({ navigation }: Props) => {
             </>
           ) : (
             <>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>API Token</Text>
+              <View style={styles.tokenLabelRow}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>API Token</Text>
+                <TouchableOpacity style={styles.scanButton} onPress={openScanner}>
+                  <MaterialCommunityIcons name="qrcode-scan" size={16} color={colors.primary} />
+                  <Text style={[styles.scanButtonText, { color: colors.primary }]}>Scan QR</Text>
+                </TouchableOpacity>
+              </View>
               <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
                 <MaterialCommunityIcons name="key" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                 <TextInput
@@ -222,7 +284,7 @@ const LoginScreen = ({ navigation }: Props) => {
                 </TouchableOpacity>
               </View>
               <Text style={[styles.hint, { color: colors.textSecondary }]}>
-                Generate a token in your RoMM server under Settings {'>'} API Tokens
+                Generate a token in your RoMM server under Settings {'>'} API Tokens, or scan the pairing QR code.
               </Text>
             </>
           )}
@@ -251,7 +313,44 @@ const LoginScreen = ({ navigation }: Props) => {
             </Text>
           </TouchableOpacity>
         </View>
+
+        <View style={[styles.watermark, { paddingBottom: insets.bottom + 16 }]}>
+          <Text style={[styles.watermarkText, { color: colors.textSecondary }]}>
+            by Cleyvin · 2026
+          </Text>
+        </View>
       </ScrollView>
+
+      <Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}>
+        <View style={[styles.scannerContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.scannerHeader, { paddingTop: insets.top + 12 }]}>
+            <TouchableOpacity onPress={() => setScannerOpen(false)} style={styles.scannerClose}>
+              <MaterialCommunityIcons name="close" size={28} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.scannerTitle, { color: colors.text }]}>Scan Pairing QR</Text>
+            <View style={{ width: 28 }} />
+          </View>
+          {permission?.granted ? (
+            <CameraView
+              style={styles.camera}
+              facing="back"
+              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+              onBarcodeScanned={scanning ? undefined : handleQRScanned}
+            >
+              <View style={styles.scannerOverlay}>
+                <View style={[styles.scannerFrame, { borderColor: colors.primary }]} />
+                <Text style={[styles.scannerHint, { color: '#fff' }]}>
+                  {scanning ? 'Exchanging code...' : 'Point the camera at the QR code'}
+                </Text>
+              </View>
+            </CameraView>
+          ) : (
+            <View style={styles.permissionPrompt}>
+              <Text style={[styles.hint, { color: colors.text }]}>Camera permission required</Text>
+            </View>
+          )}
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -261,7 +360,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
   header: {
     alignItems: 'center',
@@ -324,6 +423,22 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  tokenLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  scanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  scanButtonText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -370,6 +485,58 @@ const styles = StyleSheet.create({
   changeServerText: {
     marginLeft: 6,
     fontSize: fontSize.md,
+  },
+  watermark: {
+    alignItems: 'center',
+    marginTop: 40,
+  },
+  watermarkText: {
+    fontSize: fontSize.sm,
+    opacity: 0.6,
+  },
+  scannerContainer: {
+    flex: 1,
+  },
+  scannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  scannerClose: {
+    padding: 4,
+  },
+  scannerTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+  },
+  camera: {
+    flex: 1,
+  },
+  scannerOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  scannerFrame: {
+    width: 260,
+    height: 260,
+    borderWidth: 3,
+    borderRadius: 16,
+  },
+  scannerHint: {
+    marginTop: 20,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  permissionPrompt: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

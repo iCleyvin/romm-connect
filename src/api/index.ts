@@ -1,7 +1,7 @@
 // by Cleyvin
 
 export { createApiClient, getApiClient, getBaseUrl, clearTokens } from './client';
-export { testConnection, login, loginWithApiToken, getCurrentUser, logout } from './auth';
+export { testConnection, login, loginWithApiToken, exchangePairingCode, getCurrentUser, logout } from './auth';
 export { getPlatforms, getPlatform } from './platforms';
 export { getRoms, getRom, searchRoms, getRomDownloadUrl } from './roms';
 export { getCollections, getCollection } from './collections';
