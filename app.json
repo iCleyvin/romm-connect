@@ -43,6 +43,12 @@
             "minSdkVersion": 24
           }
         }
+      ],
+      [
+        "@hot-updater/react-native",
+        {
+          "channel": "production"
+        }
       ]
     ]
   }
