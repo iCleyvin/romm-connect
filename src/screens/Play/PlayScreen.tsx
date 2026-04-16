@@ -1,7 +1,8 @@
 // by Cleyvin
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, AppState, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState, Alert } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -31,6 +32,8 @@ const PlayScreen = () => {
 
   const baseUrl = serverConfig ? getBaseUrl(serverConfig) : '';
   const core = CORE_MAP[platformSlug] || 'nes';
+  const UNSUPPORTED_MOBILE_CORES = ['psp', 'ppsspp', 'dos', 'dosbox_pure'];
+  const isUnsupported = UNSUPPORTED_MOBILE_CORES.includes(core);
 
   // Mark as playing
   useEffect(() => {
@@ -289,6 +292,27 @@ const PlayScreen = () => {
       }
     }
 
+
+    // === Capture errors for debugging ===
+    (function() {
+      var origErr = console.error;
+      console.error = function() {
+        try {
+          var msg = Array.prototype.slice.call(arguments).map(function(a){
+            try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch(e){ return String(a); }
+          }).join(' ');
+          sendToRN('WV_ERROR', { msg: msg });
+        } catch(e) {}
+        origErr.apply(console, arguments);
+      };
+      window.addEventListener('error', function(e) {
+        sendToRN('WV_ERROR', { msg: 'UNCAUGHT: ' + e.message + ' at ' + e.filename + ':' + e.lineno });
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        sendToRN('WV_ERROR', { msg: 'UNHANDLED_REJECT: ' + (e.reason && e.reason.message || e.reason) });
+      });
+    })();
+
     // === Progress ===
     function formatBytes(b) {
       if (b===0) return '0 B';
@@ -445,7 +469,21 @@ const PlayScreen = () => {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
-      {htmlContent && (
+      {isUnsupported ? (
+        <View style={styles.unsupportedContainer}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={64} color={colors.primary} />
+          <Text style={[styles.unsupportedTitle, { color: colors.text }]}>Not supported on mobile</Text>
+          <Text style={[styles.unsupportedText, { color: colors.textSecondary }]}>
+            {core.toUpperCase()} games require browser features that Android does not provide. Please use the RoMM web interface on a desktop browser to play this game.
+          </Text>
+          <TouchableOpacity
+            style={[styles.unsupportedButton, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.unsupportedButtonText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      ) : htmlContent && (
         <WebView
           ref={webViewRef}
           source={{ html: htmlContent, baseUrl }}
@@ -471,6 +509,34 @@ const PlayScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   webview: { flex: 1 },
+  unsupportedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    gap: 16,
+  },
+  unsupportedTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  unsupportedText: {
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  unsupportedButton: {
+    marginTop: 24,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  unsupportedButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
   loadingOverlay: {
     position: 'absolute',
     top: '50%',
