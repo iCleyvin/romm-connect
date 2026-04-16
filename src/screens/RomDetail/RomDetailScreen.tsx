@@ -23,6 +23,7 @@ try {
 } catch {}
 import { useApp } from '../../store/AppContext';
 import { getRom, getBaseUrl, getApiClient } from '../../api';
+import { getCurrentAuthToken } from '../../hooks/useAuthHeaders';
 import { STORAGE_KEYS } from '../../constants';
 import { Rom, RootStackParamList } from '../../types';
 import { getCoverUrl, getRomCoverUrl, formatFileSize } from '../../utils';
@@ -93,15 +94,14 @@ const RomDetailScreen = () => {
     }
     setDownloading(true);
     try {
-      const storedTokens = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-      const tokens = storedTokens ? JSON.parse(storedTokens) : null;
+      const authToken = await getCurrentAuthToken();
       const baseUrl = getBaseUrl(serverConfig);
       const url = `${baseUrl}/api/roms/${rom.id}/content/${encodeURIComponent(rom.fs_name)}`;
 
       // Download to cache first
       const cacheUri = FileSystem.cacheDirectory + rom.fs_name;
       const download = await FileSystem.downloadAsync(url, cacheUri, {
-        headers: tokens ? { Authorization: `Bearer ${tokens.access_token}` } : {},
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
 
       if (download.status === 200) {

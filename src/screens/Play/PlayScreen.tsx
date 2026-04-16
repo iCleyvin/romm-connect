@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../../store/AppContext';
 import { getBaseUrl, getApiClient } from '../../api';
+import { getCurrentAuthToken } from '../../hooks/useAuthHeaders';
 import { STORAGE_KEYS } from '../../constants';
 import { RootStackParamList } from '../../types';
 import ScreenHeader from '../../components/common/ScreenHeader';
@@ -143,8 +144,8 @@ const PlayScreen = () => {
           if (qsIdx > 0) downloadPath = downloadPath.substring(0, qsIdx);
           // Re-encode: %XX -> %25XX (double encode special chars in filename)
           downloadPath = downloadPath.replace(/%([0-9A-Fa-f]{2})/g, '%25$1');
-          const storedT = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-          const authH = storedT ? `Bearer ${JSON.parse(storedT).access_token}` : '';
+          const tokStr = await getCurrentAuthToken();
+          const authH = tokStr ? `Bearer ${tokStr}` : '';
           const downloadUrl = `${baseUrl}${downloadPath}`;
 
           // Use fetch inside WebView for binary download
@@ -230,9 +231,8 @@ const PlayScreen = () => {
 
   useEffect(() => {
     const buildHtml = async () => {
-      const storedTokens = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-      const tokens = storedTokens ? JSON.parse(storedTokens) : null;
-      const authHeader = tokens ? `Bearer ${tokens.access_token}` : '';
+      const tokenStr = await getCurrentAuthToken();
+      const authHeader = tokenStr ? `Bearer ${tokenStr}` : '';
       const fileIdsParam = fileIds && fileIds.length > 0 ? `?file_ids=${fileIds.join(',')}` : '';
       const romUrl = `${baseUrl}/api/roms/${romId}/content/${encodeURIComponent(romFsName)}${fileIdsParam}`;
 

@@ -64,3 +64,18 @@ export const useCredentials = (): { username: string; password: string } | null 
 
   return creds;
 };
+
+// Returns the current bearer token, supporting both OAuth and API token auth
+export const getCurrentAuthToken = async (): Promise<string | null> => {
+  const method = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_METHOD);
+  if (method === 'token') {
+    return await loadApiToken();
+  }
+  const stored = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored).access_token || null;
+  } catch {
+    return null;
+  }
+};
