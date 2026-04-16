@@ -40,6 +40,20 @@ export const loadCredentials = async (): Promise<{ username: string; password: s
 export const deleteCredentials = async () => {
   await SecureStore.deleteItemAsync(CREDS_KEY);
 };
+// Store API token securely
+const API_TOKEN_KEY = 'romm_api_token';
+
+export const saveApiToken = async (token: string) => {
+  await SecureStore.setItemAsync(API_TOKEN_KEY, token);
+};
+
+export const loadApiToken = async (): Promise<string | null> => {
+  return await SecureStore.getItemAsync(API_TOKEN_KEY);
+};
+
+export const deleteApiToken = async () => {
+  await SecureStore.deleteItemAsync(API_TOKEN_KEY);
+};
 
 export const useCredentials = (): { username: string; password: string } | null => {
   const [creds, setCreds] = useState<{ username: string; password: string } | null>(null);

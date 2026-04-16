@@ -16,9 +16,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { saveCredentials } from '../../hooks/useAuthHeaders';
+import { saveCredentials, saveApiToken } from '../../hooks/useAuthHeaders';
 import { useApp } from '../../store/AppContext';
-import { login, getCurrentUser } from '../../api';
+import { login, loginWithApiToken, getCurrentUser } from '../../api';
 import { STORAGE_KEYS } from '../../constants';
 import { RootStackParamList } from '../../types';
 import { spacing, borderRadius, fontSize } from '../../theme';
@@ -27,31 +27,57 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Login'>;
 };
 
+type LoginMethod = 'credentials' | 'apitoken';
+
 const LoginScreen = ({ navigation }: Props) => {
-  const { colors, setUser, setCredentials, setAuthToken } = useApp();
+  const { colors, setUser, setCredentials, setAuthToken, setAuthMethod } = useApp();
   const insets = useSafeAreaInsets();
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>('credentials');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [apiToken, setApiTokenInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      setError('Please enter username and password');
-      return;
+    if (loginMethod === 'credentials') {
+      if (!username.trim() || !password.trim()) {
+        setError('Please enter username and password');
+        return;
+      }
+    } else {
+      if (!apiToken.trim()) {
+        setError('Please enter your API token');
+        return;
+      }
+      if (!apiToken.trim().startsWith('rmm_')) {
+        setError('Invalid token format. RoMM API tokens start with rmm_');
+        return;
+      }
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      const tokens = await login(username.trim(), password);
-      await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKENS, JSON.stringify(tokens));
-      setAuthToken(tokens.access_token);
-      const creds = { username: username.trim(), password };
-      setCredentials(creds);
-      await saveCredentials(creds.username, creds.password);
+      if (loginMethod === 'credentials') {
+        const tokens = await login(username.trim(), password);
+        await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKENS, JSON.stringify(tokens));
+        setAuthToken(tokens.access_token);
+        const creds = { username: username.trim(), password };
+        setCredentials(creds);
+        await saveCredentials(creds.username, creds.password);
+        await AsyncStorage.setItem(STORAGE_KEYS.AUTH_METHOD, 'oauth');
+        setAuthMethod('oauth');
+      } else {
+        await loginWithApiToken(apiToken.trim());
+        setAuthToken(apiToken.trim());
+        await saveApiToken(apiToken.trim());
+        await AsyncStorage.setItem(STORAGE_KEYS.AUTH_METHOD, 'token');
+        setAuthMethod('token');
+      }
 
       const userData = await getCurrentUser();
       setUser(userData);
@@ -66,7 +92,9 @@ const LoginScreen = ({ navigation }: Props) => {
         code: err.code,
       }));
       if (err.response?.status === 401) {
-        setError('Invalid username or password');
+        setError(loginMethod === 'credentials'
+          ? 'Invalid username or password'
+          : 'Invalid or expired API token');
       } else if (err.response?.status === 403) {
         setError(`Forbidden: ${JSON.stringify(err.response?.data?.detail || err.response?.data)}`);
       } else {
@@ -96,6 +124,36 @@ const LoginScreen = ({ navigation }: Props) => {
           </Text>
         </View>
 
+        {/* Login method toggle */}
+        <View style={[styles.toggleContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+          <TouchableOpacity
+            style={[styles.toggleButton, loginMethod === 'credentials' && { backgroundColor: colors.primary }]}
+            onPress={() => { setLoginMethod('credentials'); setError(null); }}
+          >
+            <MaterialCommunityIcons
+              name="account-key"
+              size={16}
+              color={loginMethod === 'credentials' ? '#fff' : colors.textSecondary}
+            />
+            <Text style={[styles.toggleText, { color: loginMethod === 'credentials' ? '#fff' : colors.textSecondary }]}>
+              Credentials
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleButton, loginMethod === 'apitoken' && { backgroundColor: colors.primary }]}
+            onPress={() => { setLoginMethod('apitoken'); setError(null); }}
+          >
+            <MaterialCommunityIcons
+              name="key-chain"
+              size={16}
+              color={loginMethod === 'apitoken' ? '#fff' : colors.textSecondary}
+            />
+            <Text style={[styles.toggleText, { color: loginMethod === 'apitoken' ? '#fff' : colors.textSecondary }]}>
+              API Token
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {error && (
           <View style={[styles.errorContainer, { backgroundColor: colors.error + '15' }]}>
             <MaterialCommunityIcons name="alert-circle" size={18} color={colors.error} />
@@ -104,39 +162,70 @@ const LoginScreen = ({ navigation }: Props) => {
         )}
 
         <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Username</Text>
-          <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="account" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder="Enter username"
-              placeholderTextColor={colors.placeholder}
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
+          {loginMethod === 'credentials' ? (
+            <>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Username</Text>
+              <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+                <MaterialCommunityIcons name="account" size={20} color={colors.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  placeholder="Enter username"
+                  placeholderTextColor={colors.placeholder}
+                  value={username}
+                  onChangeText={setUsername}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Password</Text>
-          <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="lock" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder="Enter password"
-              placeholderTextColor={colors.placeholder}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
-              <MaterialCommunityIcons
-                name={showPassword ? 'eye-off' : 'eye'}
-                size={20}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Password</Text>
+              <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+                <MaterialCommunityIcons name="lock" size={20} color={colors.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  placeholder="Enter password"
+                  placeholderTextColor={colors.placeholder}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
+                  <MaterialCommunityIcons
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>API Token</Text>
+              <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+                <MaterialCommunityIcons name="key" size={20} color={colors.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  placeholder="rmm_xxxxxxxx..."
+                  placeholderTextColor={colors.placeholder}
+                  value={apiToken}
+                  onChangeText={setApiTokenInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry={!showToken}
+                />
+                <TouchableOpacity onPress={() => setShowToken(!showToken)} style={styles.eyeButton}>
+                  <MaterialCommunityIcons
+                    name={showToken ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                Generate a token in your RoMM server under Settings {'>'} API Tokens
+              </Text>
+            </>
+          )}
 
           <TouchableOpacity
             style={[styles.loginButton, { backgroundColor: colors.primary }]}
@@ -146,7 +235,9 @@ const LoginScreen = ({ navigation }: Props) => {
             {loading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.loginButtonText}>Sign In</Text>
+              <Text style={styles.loginButtonText}>
+                {loginMethod === 'credentials' ? 'Sign In' : 'Connect'}
+              </Text>
             )}
           </TouchableOpacity>
 
@@ -174,7 +265,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
   },
   logoCircle: {
     width: 96,
@@ -191,6 +282,26 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: fontSize.md,
     marginTop: 8,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 16,
+  },
+  toggleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: borderRadius.md,
+    gap: 6,
+  },
+  toggleText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
   errorContainer: {
     flexDirection: 'row',
@@ -231,6 +342,11 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     padding: 8,
+  },
+  hint: {
+    fontSize: fontSize.sm,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   loginButton: {
     height: 50,

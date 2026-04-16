@@ -6,7 +6,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../store/AppContext';
-import { createApiClient, getCurrentUser } from '../api';
+import { createApiClient, getCurrentUser, loginWithApiToken } from '../api';
+import { loadApiToken } from '../hooks/useAuthHeaders';
 import { STORAGE_KEYS } from '../constants';
 import { RootStackParamList } from '../types';
 
@@ -51,8 +52,16 @@ const AppNavigator = () => {
       const config = JSON.parse(storedConfig);
       try {
         createApiClient(config);
+        const storedMethod = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_METHOD);
+        const storedApiToken = await loadApiToken();
         const storedTokens = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-        if (storedTokens) {
+
+        if (storedMethod === 'token' && storedApiToken) {
+          await loginWithApiToken(storedApiToken);
+          const userData = await getCurrentUser();
+          setUser(userData);
+          setInitialRoute('Main');
+        } else if (storedTokens) {
           const userData = await getCurrentUser();
           setUser(userData);
           setInitialRoute('Main');

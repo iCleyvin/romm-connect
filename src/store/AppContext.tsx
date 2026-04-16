@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loadCredentials } from '../hooks/useAuthHeaders';
+import { loadCredentials, loadApiToken } from '../hooks/useAuthHeaders';
 import { Colors, ThemeColors, ThemeMode } from '../theme';
 import { STORAGE_KEYS } from '../constants';
 import { User, ServerConfig } from '../types';
@@ -11,6 +11,8 @@ interface Credentials {
   username: string;
   password: string;
 }
+
+export type AuthMethod = 'oauth' | 'token';
 
 interface AppContextType {
   theme: ThemeMode;
@@ -24,6 +26,8 @@ interface AppContextType {
   setCredentials: (creds: Credentials | null) => void;
   authToken: string | null;
   setAuthToken: (token: string | null) => void;
+  authMethod: AuthMethod;
+  setAuthMethod: (method: AuthMethod) => void;
   isReady: boolean;
 }
 
@@ -35,6 +39,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
   const [credentials, setCredentials] = useState<Credentials | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('oauth');
   const [isReady, setIsReady] = useState(false);
 
   const colors = Colors[theme];
@@ -42,12 +47,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const init = async () => {
       try {
-        const [storedTheme, storedConfig, storedUser, storedTokens, storedCreds] = await Promise.all([
+        const [storedTheme, storedConfig, storedUser, storedTokens, storedCreds, storedAuthMethod, storedApiToken] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.THEME),
           AsyncStorage.getItem(STORAGE_KEYS.SERVER_CONFIG),
           AsyncStorage.getItem(STORAGE_KEYS.USER),
           AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS),
           loadCredentials(),
+          AsyncStorage.getItem(STORAGE_KEYS.AUTH_METHOD),
+          loadApiToken(),
         ]);
         if (storedTheme === 'light' || storedTheme === 'dark') setTheme(storedTheme);
         if (storedConfig) setServerConfig(JSON.parse(storedConfig));
@@ -56,6 +63,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           try { setAuthToken(JSON.parse(storedTokens).access_token); } catch {}
         }
         if (storedCreds) setCredentials(storedCreds);
+        if (storedAuthMethod === 'token') setAuthMethod('token');
+        if (storedApiToken) setAuthToken(storedApiToken);
       } catch (e) {
         console.warn('AppContext init error:', e);
       }
@@ -78,6 +87,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         serverConfig, setServerConfig,
         credentials, setCredentials,
         authToken, setAuthToken,
+        authMethod, setAuthMethod,
         isReady,
       }}
     >

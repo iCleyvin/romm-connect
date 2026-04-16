@@ -5,6 +5,7 @@ export const STORAGE_KEYS = {
   AUTH_TOKENS: '@romm_auth_tokens',
   USER: '@romm_user',
   THEME: '@romm_theme',
+  AUTH_METHOD: '@romm_auth_method',
 };
 
 export const API_PATHS = {

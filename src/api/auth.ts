@@ -1,7 +1,7 @@
 // by Cleyvin
 
 import axios from 'axios';
-import { getApiClient, getBaseUrl, setTokens } from './client';
+import { getApiClient, getBaseUrl, setTokens, setApiTokenDirect } from './client';
 import { API_PATHS } from '../constants';
 import { AuthTokens, User, ServerConfig, HeartbeatResponse } from '../types';
 
@@ -26,6 +26,11 @@ export const login = async (username: string, password: string): Promise<AuthTok
   const tokens: AuthTokens = response.data;
   setTokens(tokens);
   return tokens;
+};
+
+
+export const loginWithApiToken = async (apiToken: string): Promise<void> => {
+  setApiTokenDirect(apiToken);
 };
 
 export const getCurrentUser = async (): Promise<User> => {

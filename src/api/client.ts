@@ -7,6 +7,7 @@ import { ServerConfig, AuthTokens } from '../types';
 
 let apiClient: AxiosInstance | null = null;
 let currentTokens: AuthTokens | null = null;
+let apiTokenDirect: string | null = null;
 
 export const getBaseUrl = (config: ServerConfig): string => {
   const protocol = config.useHttps ? 'https' : 'http';
@@ -34,7 +35,9 @@ export const createApiClient = (config: ServerConfig): AxiosInstance => {
         }
       } catch {}
     }
-    if (currentTokens?.access_token) {
+    if (apiTokenDirect) {
+      reqConfig.headers.Authorization = `Bearer ${apiTokenDirect}`;
+    } else if (currentTokens?.access_token) {
       reqConfig.headers.Authorization = `Bearer ${currentTokens.access_token}`;
     }
     return reqConfig;
@@ -44,7 +47,7 @@ export const createApiClient = (config: ServerConfig): AxiosInstance => {
     (response) => response,
     async (error) => {
       const originalRequest = error.config;
-      if (error.response?.status === 401 && !originalRequest._retry && currentTokens?.refresh_token) {
+      if (error.response?.status === 401 && !originalRequest._retry && currentTokens?.refresh_token && !apiTokenDirect) {
         originalRequest._retry = true;
         try {
           const refreshed = await refreshTokens(currentTokens.refresh_token);
@@ -76,8 +79,15 @@ export const setTokens = (tokens: AuthTokens) => {
   currentTokens = tokens;
 };
 
+export const setApiTokenDirect = (token: string) => {
+  apiTokenDirect = token;
+  currentTokens = null;
+};
+
+
 export const clearTokens = () => {
   currentTokens = null;
+  apiTokenDirect = null;
 };
 
 const refreshTokens = async (refreshToken: string): Promise<AuthTokens> => {
