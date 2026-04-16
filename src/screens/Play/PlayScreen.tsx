@@ -13,6 +13,7 @@ import { getCurrentAuthToken } from '../../hooks/useAuthHeaders';
 import { STORAGE_KEYS } from '../../constants';
 import { RootStackParamList } from '../../types';
 import ScreenHeader from '../../components/common/ScreenHeader';
+import * as WebBrowser from 'expo-web-browser';
 
 const CORE_MAP: Record<string, string> = {
   nes: 'nes', snes: 'snes', n64: 'n64', gb: 'gb', gba: 'gba', gbc: 'gb',
@@ -471,16 +472,30 @@ const PlayScreen = () => {
       )}
       {isUnsupported ? (
         <View style={styles.unsupportedContainer}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={64} color={colors.primary} />
-          <Text style={[styles.unsupportedTitle, { color: colors.text }]}>Not supported on mobile</Text>
+          <MaterialCommunityIcons name="web" size={64} color={colors.primary} />
+          <Text style={[styles.unsupportedTitle, { color: colors.text }]}>Play in browser</Text>
           <Text style={[styles.unsupportedText, { color: colors.textSecondary }]}>
-            {core.toUpperCase()} games require browser features that Android does not provide. Please use the RoMM web interface on a desktop browser to play this game.
+            {core.toUpperCase()} games cannot run inside the app because Android WebView does not support SharedArrayBuffer. Open this game in your browser to play it.
           </Text>
           <TouchableOpacity
             style={[styles.unsupportedButton, { backgroundColor: colors.primary }]}
+            onPress={async () => {
+              const url = `${baseUrl}/play/${platformSlug}/${romId}`;
+              try {
+                await WebBrowser.openBrowserAsync(url);
+              } catch (e) {
+                Alert.alert('Error', 'Could not open browser');
+              }
+            }}
+          >
+            <MaterialCommunityIcons name="open-in-new" size={18} color="#fff" />
+            <Text style={styles.unsupportedButtonText}>Open in browser</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.unsupportedSecondary]}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.unsupportedButtonText}>Go back</Text>
+            <Text style={[styles.unsupportedSecondaryText, { color: colors.textSecondary }]}>Go back</Text>
           </TouchableOpacity>
         </View>
       ) : htmlContent && (
@@ -531,11 +546,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   unsupportedButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  unsupportedSecondary: {
+    marginTop: 12,
+    padding: 12,
+  },
+  unsupportedSecondaryText: {
+    fontSize: 14,
   },
   loadingOverlay: {
     position: 'absolute',
