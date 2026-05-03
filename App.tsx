@@ -3,6 +3,7 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { HotUpdater } from '@hot-updater/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider } from './src/store/AppContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import ErrorBoundary from './src/components/common/ErrorBoundary';
@@ -11,10 +12,12 @@ import { View, Text, ActivityIndicator } from 'react-native';
 function App() {
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <StatusBar style="auto" />
-        <AppNavigator />
-      </AppProvider>
+      <SafeAreaProvider>
+        <AppProvider>
+          <StatusBar style="auto" />
+          <AppNavigator />
+        </AppProvider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

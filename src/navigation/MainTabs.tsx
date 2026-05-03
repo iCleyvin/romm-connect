@@ -3,6 +3,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../store/AppContext';
 import { MainTabParamList } from '../types';
 
@@ -15,6 +16,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const MainTabs = () => {
   const { colors } = useApp();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -24,8 +26,8 @@ const MainTabs = () => {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          height: 60 + insets.bottom,
+          paddingBottom: Math.max(8, insets.bottom),
           paddingTop: 4,
         },
         tabBarActiveTintColor: colors.primary,
