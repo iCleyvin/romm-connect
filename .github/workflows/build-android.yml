@@ -1,4 +1,4 @@
-name: Build Android AAB
+name: Build Android
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build Release AAB
+    name: Build Release
     runs-on: [self-hosted, android]
 
     steps:
@@ -16,11 +16,11 @@ jobs:
 
       - name: Setup environment
         run: |
-          echo "ANDROID_HOME=/home/cleyvinserv/android-sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=/home/cleyvinserv/android-sdk" >> $GITHUB_ENV
-          echo "/home/cleyvinserv/.nvm/versions/node/v22.22.2/bin" >> $GITHUB_PATH
-          echo "/home/cleyvinserv/android-sdk/platform-tools" >> $GITHUB_PATH
-          echo "/home/cleyvinserv/android-sdk/build-tools/35.0.0" >> $GITHUB_PATH
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/.nvm/versions/node/v22.22.2/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/build-tools/35.0.0" >> $GITHUB_PATH
 
       - name: Install dependencies
         run: npm install
@@ -51,10 +51,8 @@ jobs:
           with open(gradle_path, "r") as f:
               content = f.read()
 
-          # Inject keystore reader before android { block
           content = content.replace("android {", props + "\nandroid {", 1)
 
-          # Add release signing config inside signingConfigs block
           content = re.sub(
               r'(signingConfigs \{)',
               r'\1' + signing_block,
@@ -62,7 +60,6 @@ jobs:
               count=1
           )
 
-          # Set release buildType to use release signingConfig
           content = re.sub(
               r'(buildTypes \{[^}]*?release \{[^}]*?)(signingConfig signingConfigs\.debug)',
               r'\1signingConfig signingConfigs.release',
@@ -77,12 +74,11 @@ jobs:
           print("build.gradle patched for release signing")
           PYEOF
 
-          # Create keystore.properties
           printf "%s\n" \
-            "storeFile=/home/cleyvinserv/keystores/romm-connect.keystore" \
-            "storePassword=RommC0nn3ct2026!" \
+            "storeFile=$HOME/keystores/romm-connect.keystore" \
+            "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
             "keyAlias=romm-connect" \
-            "keyPassword=RommC0nn3ct2026!" \
+            "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" \
             > android/keystore.properties
 
           echo "keystore.properties created"
@@ -98,13 +94,13 @@ jobs:
       - name: Save builds to server
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          OUTPUT_DIR="/home/cleyvinserv/builds/romm-connect"
+          OUTPUT_DIR="$HOME/builds/romm-connect"
           mkdir -p "$OUTPUT_DIR"
           cp android/app/build/outputs/bundle/release/app-release.aab \
             "$OUTPUT_DIR/romm-connect-v${VERSION}-build${{ github.run_number }}.aab"
           cp android/app/build/outputs/apk/release/app-release.apk \
             "$OUTPUT_DIR/romm-connect-v${VERSION}-build${{ github.run_number }}.apk"
-          echo "Builds guardados en: $OUTPUT_DIR/"
+          echo "Builds saved to $OUTPUT_DIR/"
           ls -lh "$OUTPUT_DIR/"
 
       - name: Upload AAB artifact
