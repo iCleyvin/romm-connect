@@ -70,18 +70,48 @@ jobs:
               count=1
           )
 
-          content = re.sub(
-              r'(buildTypes \{[^}]*?release \{[^}]*?)(signingConfig signingConfigs\.debug)',
-              r'\1signingConfig signingConfigs.release',
+          # Point buildTypes.release at signingConfigs.release.
+          # NOTE: the previous regex `buildTypes \{[^}]*?release \{[^}]*?...` was
+          # broken: `[^}]` cannot cross the `}` of the debug{} block that precedes
+          # release{} inside buildTypes, so the substitution silently matched 0
+          # times and release builds stayed on the DEBUG signing config (shipping
+          # debug-signed "release" artifacts). We anchor on the line that is unique
+          # to the release block instead (it is followed by the shrinkResources def)
+          # and then assert exactly one replacement happened.
+          content, n = re.subn(
+              r'signingConfig signingConfigs\.debug(\s*\n\s*def enableShrinkResources)',
+              r'signingConfig signingConfigs.release\1',
               content,
-              count=1,
-              flags=re.DOTALL
+              count=1
           )
+          if n != 1:
+              raise SystemExit(
+                  "ERROR: expected exactly 1 release signingConfig replacement, got "
+                  + str(n) + ". build.gradle template changed; fix the signing patch."
+              )
 
           with open(gradle_path, "w") as f:
               f.write(content)
 
-          print("build.gradle patched for release signing")
+          # Validate the written file: release must use the release key, and the
+          # release block must not retain the debug signingConfig.
+          with open(gradle_path) as f:
+              written = f.read()
+          release_idx = written.find("buildTypes")
+          release_block = written[release_idx:]
+          if "signingConfig signingConfigs.release" not in written:
+              raise SystemExit("ERROR: signingConfigs.release not present after patch.")
+          import re as _re
+          # In the buildTypes.release block, the signingConfig must be .release.
+          m = _re.search(r'release \{[^}]*?signingConfig signingConfigs\.(\w+)',
+                         release_block, _re.DOTALL)
+          if not m or m.group(1) != "release":
+              raise SystemExit(
+                  "ERROR: buildTypes.release still not using signingConfigs.release "
+                  "(found: " + (m.group(1) if m else "none") + ")."
+              )
+
+          print("build.gradle patched for release signing (verified)")
           PYEOF
 
           printf "%s\n" \
@@ -100,6 +130,23 @@ jobs:
       - name: Build APK
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify release signing
+        # Defense-in-depth. A fragile regex previously left release builds on the
+        # debug signingConfig, so debug-signed APKs could ship as "release". This
+        # step hard-fails if the packaged APK is signed with the Android debug key,
+        # and prints the signer DN to the logs for auditability.
+        working-directory: android
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          BUILD_TOOLS="$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)"
+          CERTS="$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK")"
+          echo "$CERTS" | grep -i "certificate DN" || true
+          if echo "$CERTS" | grep -qi "CN=Android Debug"; then
+            echo "::error::Release APK is DEBUG-signed. Failing build."
+            exit 1
+          fi
+          echo "Release signing verified (not debug-signed)."
 
       - name: Save builds to server
         run: |
