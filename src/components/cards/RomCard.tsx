@@ -5,7 +5,8 @@ import { View, Text, TouchableOpacity, Image, StyleSheet, Dimensions } from 'rea
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../store/AppContext';
 import { Rom } from '../../types';
-import { getRomCoverUrl, formatFileSize } from '../../utils';
+import { getRomCoverUrl, isServerAssetUrl, formatFileSize } from '../../utils';
+import { useImageAuthHeaders } from '../../hooks/useAuthHeaders';
 import { borderRadius, spacing } from '../../theme';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -20,8 +21,12 @@ interface Props {
 }
 
 const RomCard = ({ rom, onPress, aspectRatio = '2/3' }: Props) => {
-  const { colors, serverConfig, credentials } = useApp();
-  const coverUrl = getRomCoverUrl(serverConfig, rom, credentials || undefined);
+  const { colors, serverConfig } = useApp();
+  const authHeaders = useImageAuthHeaders();
+  const coverUrl = getRomCoverUrl(serverConfig, rom);
+  const coverSource = coverUrl
+    ? { uri: coverUrl, headers: isServerAssetUrl(serverConfig, coverUrl) ? authHeaders : undefined }
+    : undefined;
 
   const parts = aspectRatio.split('/');
   const ratio = parts.length === 2 ? parseInt(parts[0]) / parseInt(parts[1]) : 2 / 3;
@@ -34,8 +39,8 @@ const RomCard = ({ rom, onPress, aspectRatio = '2/3' }: Props) => {
       style={[styles.container, { width: CARD_WIDTH }]}
     >
       <View style={[styles.coverContainer, { height: cardHeight, backgroundColor: colors.topLayer }]}>
-        {coverUrl ? (
-          <Image source={{ uri: coverUrl }} style={styles.cover} resizeMode="cover" />
+        {coverSource ? (
+          <Image source={coverSource} style={styles.cover} resizeMode="cover" />
         ) : (
           <View style={[styles.noCover, { backgroundColor: colors.primaryDark + '40' }]}>
             <MaterialCommunityIcons name="gamepad-variant" size={20} color={colors.primary} style={{ marginBottom: 4 }} />

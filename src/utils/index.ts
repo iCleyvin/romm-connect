@@ -25,28 +25,33 @@ export const getCoverUrl = (
 
 export const getRomCoverUrl = (
   serverConfig: ServerConfig | null,
-  rom: { path_cover_small?: string; path_cover_large?: string; url_cover?: string; path_cover_s?: string; path_cover_l?: string },
-  credentials?: { username: string; password: string }
+  rom: { path_cover_small?: string; path_cover_large?: string; url_cover?: string; path_cover_s?: string; path_cover_l?: string }
 ): string | undefined => {
   // Priority 1: External URL (IGDB etc.) - no auth needed
   if (rom.url_cover) return rom.url_cover;
 
-  // Priority 2: Local cover with Basic Auth embedded in URL
+  // Priority 2: Local cover served by RoMM. Never embed credentials in the URL —
+  // the caller authenticates via an Authorization: Bearer header instead (see
+  // useImageAuthHeaders). Only attach that header for URLs on the server host.
   const localPath = rom.path_cover_small || rom.path_cover_large || rom.path_cover_s || rom.path_cover_l;
   if (localPath && serverConfig) {
-    const protocol = serverConfig.useHttps ? 'https' : 'http';
-    const port = serverConfig.port ? `:${serverConfig.port}` : '';
     let cleanPath = localPath.startsWith('/assets/') ? localPath.slice(8) : localPath;
     const qsIndex = cleanPath.indexOf('?');
     if (qsIndex > 0) cleanPath = cleanPath.substring(0, qsIndex);
-
-    if (credentials) {
-      return `${protocol}://${encodeURIComponent(credentials.username)}:${encodeURIComponent(credentials.password)}@${serverConfig.host}${port}/api/raw/assets/${encodeURI(cleanPath)}`;
-    }
-    return `${protocol}://${serverConfig.host}${port}/api/raw/assets/${encodeURI(cleanPath)}`;
+    return `${getBaseUrl(serverConfig)}/api/raw/assets/${encodeURI(cleanPath)}`;
   }
 
   return undefined;
+};
+
+// True when the URL points at the configured RoMM server (i.e. needs the bearer
+// header). External cover URLs (IGDB, etc.) must NOT receive the token.
+export const isServerAssetUrl = (
+  serverConfig: ServerConfig | null,
+  url?: string
+): boolean => {
+  if (!serverConfig || !url) return false;
+  return url.startsWith(getBaseUrl(serverConfig));
 };
 
 export const getAspectRatio = (ratio: string): number => {

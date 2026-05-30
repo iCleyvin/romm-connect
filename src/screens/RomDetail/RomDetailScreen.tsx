@@ -23,10 +23,10 @@ try {
 } catch {}
 import { useApp } from '../../store/AppContext';
 import { getRom, getBaseUrl, getApiClient } from '../../api';
-import { getCurrentAuthToken } from '../../hooks/useAuthHeaders';
+import { getCurrentAuthToken, useImageAuthHeaders } from '../../hooks/useAuthHeaders';
 import { STORAGE_KEYS } from '../../constants';
-import { Rom, RootStackParamList } from '../../types';
-import { getCoverUrl, getRomCoverUrl, formatFileSize } from '../../utils';
+import { Rom, RomUser, RootStackParamList } from '../../types';
+import { getCoverUrl, getRomCoverUrl, isServerAssetUrl, formatFileSize } from '../../utils';
 import { spacing, borderRadius, fontSize } from '../../theme';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import LoadingScreen from '../../components/common/LoadingScreen';
@@ -34,7 +34,8 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const RomDetailScreen = () => {
-  const { colors, serverConfig, credentials } = useApp();
+  const { colors, serverConfig } = useApp();
+  const authHeaders = useImageAuthHeaders();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'RomDetail'>>();
   const { romId } = route.params;
@@ -138,7 +139,17 @@ const RomDetailScreen = () => {
   if (loading) return <LoadingScreen message="Loading ROM details..." />;
   if (!rom) return null;
 
-  const coverUrl = getRomCoverUrl(serverConfig, rom, credentials || undefined);
+  // Capture as a const so TS narrowing survives inside the onPress closures below.
+  const romUser = rom.rom_user;
+  // Build a complete RomUser when patching rating/status (no non-null assertions).
+  const patchRomUser = (patch: Partial<RomUser>): RomUser => ({
+    backlogged: false,
+    now_playing: false,
+    hidden: false,
+    ...romUser,
+    ...patch,
+  });
+  const coverUrl = getRomCoverUrl(serverConfig, rom);
   const screenshots = rom.url_screenshots || [];
 
   return (
@@ -149,7 +160,11 @@ const RomDetailScreen = () => {
         {/* Cover Image */}
         <View style={styles.coverSection}>
           {coverUrl ? (
-            <Image source={{ uri: coverUrl }} style={styles.coverImage} resizeMode="contain" />
+            <Image
+              source={{ uri: coverUrl, headers: isServerAssetUrl(serverConfig, coverUrl) ? authHeaders : undefined }}
+              style={styles.coverImage}
+              resizeMode="contain"
+            />
           ) : (
             <View style={[styles.noCover, { backgroundColor: colors.topLayer }]}>
               <MaterialCommunityIcons name="image-off-outline" size={64} color={colors.gray} />
@@ -214,20 +229,20 @@ const RomDetailScreen = () => {
           )}
 
           {/* Your Progress - Interactive */}
-          {rom.rom_user && (
+          {romUser && (
             <View style={[styles.userStatusCard, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
               <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Your Progress</Text>
 
               {/* Last Played & Now Playing */}
-              {rom.rom_user.last_played && (
+              {romUser.last_played && (
                 <View style={styles.statusItem}>
                   <MaterialCommunityIcons name="clock-outline" size={16} color={colors.info} />
                   <Text style={[styles.statusText, { color: colors.text }]}>
-                    Last played: {new Date(rom.rom_user.last_played).toLocaleDateString()}
+                    Last played: {new Date(romUser.last_played).toLocaleDateString()}
                   </Text>
                 </View>
               )}
-              {rom.rom_user.now_playing && (
+              {romUser.now_playing && (
                 <View style={styles.statusItem}>
                   <MaterialCommunityIcons name="play-circle" size={16} color={colors.success} />
                   <Text style={[styles.statusText, { color: colors.success }]}>Now Playing</Text>
@@ -245,62 +260,62 @@ const RomDetailScreen = () => {
                       try {
                         const client = getApiClient();
                         await client.put(`/api/roms/${rom.id}/props`, { rating: newRating });
-                        setRom({ ...rom, rom_user: { ...rom.rom_user!, rating: newRating } });
+                        setRom({ ...rom, rom_user: patchRomUser({ rating: newRating }) });
                       } catch {}
                     }}
                   >
                     <MaterialCommunityIcons
-                      name={(rom.rom_user.rating || 0) >= star * 2 ? 'star' : 'star-outline'}
+                      name={(romUser.rating || 0) >= star * 2 ? 'star' : 'star-outline'}
                       size={28}
                       color={colors.warning}
                     />
                   </TouchableOpacity>
                 ))}
                 <Text style={[styles.ratingText, { color: colors.textSecondary }]}>
-                  {rom.rom_user.rating ? `${rom.rom_user.rating}/10` : ''}
+                  {romUser.rating ? `${romUser.rating}/10` : ''}
                 </Text>
               </View>
 
               {/* Game Status Selector */}
               <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>Status</Text>
               <View style={styles.statusChips}>
-                {[
+                {([
                   { value: null, label: 'None', icon: 'minus-circle-outline' },
                   { value: 'INCOMPLETE', label: 'Playing', icon: 'gamepad-variant' },
                   { value: 'FINISHED', label: 'Finished', icon: 'flag-checkered' },
                   { value: 'COMPLETED_100', label: '100%', icon: 'trophy' },
                   { value: 'RETIRED', label: 'Retired', icon: 'archive' },
-                ].map((s) => (
+                ] as { value: RomUser['status'] | null; label: string; icon: string }[]).map((s) => (
                   <TouchableOpacity
                     key={s.label}
                     onPress={async () => {
                       try {
                         const client = getApiClient();
                         await client.put(`/api/roms/${rom.id}/props`, { status: s.value });
-                        setRom({ ...rom, rom_user: { ...rom.rom_user!, status: s.value as any } });
+                        setRom({ ...rom, rom_user: patchRomUser({ status: s.value ?? undefined }) });
                       } catch {}
                     }}
                     style={[
                       styles.statusChip,
                       {
-                        backgroundColor: rom.rom_user.status === s.value ? colors.primary + '30' : colors.surface,
-                        borderColor: rom.rom_user.status === s.value ? colors.primary : colors.border,
+                        backgroundColor: romUser.status === s.value ? colors.primary + '30' : colors.surface,
+                        borderColor: romUser.status === s.value ? colors.primary : colors.border,
                       },
                     ]}
                   >
                     <MaterialCommunityIcons
                       name={s.icon as any}
                       size={14}
-                      color={rom.rom_user.status === s.value ? colors.primary : colors.textSecondary}
+                      color={romUser.status === s.value ? colors.primary : colors.textSecondary}
                     />
-                    <Text style={[styles.statusChipText, { color: rom.rom_user.status === s.value ? colors.primary : colors.textSecondary }]}>
+                    <Text style={[styles.statusChipText, { color: romUser.status === s.value ? colors.primary : colors.textSecondary }]}>
                       {s.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
-              {!rom.rom_user.last_played && !rom.rom_user.status && (
+              {!romUser.last_played && !romUser.status && (
                 <Text style={[styles.statusText, { color: colors.gray, marginTop: 8 }]}>
                   Not played yet. Tap Play ROM to start!
                 </Text>
@@ -313,14 +328,17 @@ const RomDetailScreen = () => {
             <View style={styles.screenshotsSection}>
               <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Screenshots</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {screenshots.map((url, i) => (
-                  <Image
-                    key={i}
-                    source={{ uri: getCoverUrl(serverConfig, url) || url }}
-                    style={[styles.screenshot, { backgroundColor: colors.topLayer }]}
-                    resizeMode="cover"
-                  />
-                ))}
+                {screenshots.map((url, i) => {
+                  const ssUrl = getCoverUrl(serverConfig, url) || url;
+                  return (
+                    <Image
+                      key={i}
+                      source={{ uri: ssUrl, headers: isServerAssetUrl(serverConfig, ssUrl) ? authHeaders : undefined }}
+                      style={[styles.screenshot, { backgroundColor: colors.topLayer }]}
+                      resizeMode="cover"
+                    />
+                  );
+                })}
               </ScrollView>
             </View>
           )}

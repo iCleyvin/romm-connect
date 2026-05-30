@@ -4,6 +4,10 @@ import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { STORAGE_KEYS } from '../constants';
+// NOTE: store/AppContext imports loadCredentials/loadApiToken from this file, so
+// this is a (benign) import cycle. It is safe because useApp is only referenced
+// at hook-call time, never during module evaluation — live bindings resolve it.
+import { useApp } from '../store/AppContext';
 
 export const useAuthHeaders = (): Record<string, string> => {
   const [headers, setHeaders] = useState<Record<string, string>>({});
@@ -63,6 +67,37 @@ export const useCredentials = (): { username: string; password: string } | null 
   }, []);
 
   return creds;
+};
+
+// Auth headers for <Image> requests to the RoMM server (covers/screenshots).
+// Resolves the bearer token (OAuth or API token) and returns a headers object
+// suitable for `source={{ uri, headers }}`. Returns undefined until the token is
+// resolved, and for users with no token.
+//
+// It re-resolves whenever the session changes — i.e. when context `authToken` or
+// `authMethod` change (login, logout, change-server, OAuth<->API-token switch) —
+// so freshly-mounted covers pick up the current credentials.
+//
+// Edge case (accepted): a *silent* OAuth refresh updates the token in
+// AsyncStorage + the axios client but not the context value, so this hook does
+// not re-fire for it. That is fine in practice: getCurrentAuthToken() reads
+// AsyncStorage (the source of truth, already updated by the refresh), so any
+// cover mounted after the refresh gets the new token, and images that already
+// loaded were validated at load time and are cached by RN.
+export const useImageAuthHeaders = (): Record<string, string> | undefined => {
+  // Read session signals so the effect re-runs on login/logout/method switch.
+  const { authToken, authMethod } = useApp();
+  const [headers, setHeaders] = useState<Record<string, string> | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    getCurrentAuthToken().then((token) => {
+      if (active) setHeaders(token ? { Authorization: `Bearer ${token}` } : undefined);
+    });
+    return () => { active = false; };
+  }, [authToken, authMethod]);
+
+  return headers;
 };
 
 // Returns the current bearer token, supporting both OAuth and API token auth

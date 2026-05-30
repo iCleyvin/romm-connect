@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cleyvin.romm_connect"
+      "bundleIdentifier": "com.cleyvin.rommconnect"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,8 +27,7 @@
       "permissions": [
         "INTERNET",
         "CAMERA"
-      ],
-      "usesCleartextTraffic": true
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

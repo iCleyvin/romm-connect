@@ -5,7 +5,8 @@ import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../store/AppContext';
 import { Collection } from '../../types';
-import { getCoverUrl } from '../../utils';
+import { getCoverUrl, isServerAssetUrl } from '../../utils';
+import { useImageAuthHeaders } from '../../hooks/useAuthHeaders';
 import { borderRadius, spacing } from '../../theme';
 
 interface Props {
@@ -15,7 +16,11 @@ interface Props {
 
 const CollectionCard = ({ collection, onPress }: Props) => {
   const { colors, serverConfig } = useApp();
+  const authHeaders = useImageAuthHeaders();
   const coverUrl = getCoverUrl(serverConfig, collection.url_cover);
+  const coverSource = coverUrl
+    ? { uri: coverUrl, headers: isServerAssetUrl(serverConfig, coverUrl) ? authHeaders : undefined }
+    : undefined;
 
   return (
     <TouchableOpacity
@@ -24,8 +29,8 @@ const CollectionCard = ({ collection, onPress }: Props) => {
       style={[styles.container, { backgroundColor: colors.topLayer, borderColor: colors.border }]}
     >
       <View style={[styles.coverContainer, { backgroundColor: colors.surface }]}>
-        {coverUrl ? (
-          <Image source={{ uri: coverUrl }} style={styles.cover} resizeMode="cover" />
+        {coverSource ? (
+          <Image source={coverSource} style={styles.cover} resizeMode="cover" />
         ) : (
           <MaterialCommunityIcons name="folder-multiple" size={36} color={colors.primary} />
         )}

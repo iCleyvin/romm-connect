@@ -1,5 +1,10 @@
 // by Cleyvin
 
+import appJson from '../../app.json';
+
+// Single source of truth for the visible app version (mirrors app.json.expo.version)
+export const APP_VERSION = appJson.expo.version;
+
 export const STORAGE_KEYS = {
   SERVER_CONFIG: '@romm_server_config',
   AUTH_TOKENS: '@romm_auth_tokens',

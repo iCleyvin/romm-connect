@@ -23,7 +23,17 @@ jobs:
           echo "$HOME/android-sdk/build-tools/35.0.0" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Expo Doctor
+        # Uses an allowlist wrapper (scripts/expo-doctor-allowlist.js) that passes
+        # only when the SOLE failure is the known duplicate @expo/fingerprint
+        # (pulled by the hot-updater devDependency; build-time only, not bundled).
+        # ANY other doctor failure fails the build instead of being hidden.
+        run: npm run doctor:ci
 
       - name: Expo prebuild
         run: npx expo prebuild --platform android --clean

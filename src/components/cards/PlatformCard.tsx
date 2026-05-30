@@ -5,7 +5,8 @@ import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../store/AppContext';
 import { Platform } from '../../types';
-import { getCoverUrl, formatFileSize } from '../../utils';
+import { getCoverUrl, isServerAssetUrl, formatFileSize } from '../../utils';
+import { useImageAuthHeaders } from '../../hooks/useAuthHeaders';
 import { borderRadius, spacing } from '../../theme';
 
 interface Props {
@@ -15,7 +16,11 @@ interface Props {
 
 const PlatformCard = ({ platform, onPress }: Props) => {
   const { colors, serverConfig } = useApp();
+  const authHeaders = useImageAuthHeaders();
   const logoUrl = platform.url_logo?.startsWith('http') ? platform.url_logo : getCoverUrl(serverConfig, platform.url_logo);
+  const logoSource = logoUrl
+    ? { uri: logoUrl, headers: isServerAssetUrl(serverConfig, logoUrl) ? authHeaders : undefined }
+    : undefined;
 
   return (
     <TouchableOpacity
@@ -24,8 +29,8 @@ const PlatformCard = ({ platform, onPress }: Props) => {
       style={[styles.container, { backgroundColor: colors.topLayer, borderColor: colors.border }]}
     >
       <View style={styles.iconContainer}>
-        {logoUrl ? (
-          <Image source={{ uri: logoUrl }} style={styles.logo} resizeMode="contain" />
+        {logoSource ? (
+          <Image source={logoSource} style={styles.logo} resizeMode="contain" />
         ) : (
           <MaterialCommunityIcons name="gamepad-variant" size={48} color={colors.primary} />
         )}

@@ -18,8 +18,9 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../../store/AppContext';
 import { logout, clearTokens, getBaseUrl } from '../../api';
-import { STORAGE_KEYS } from '../../constants';
+import { STORAGE_KEYS, APP_VERSION } from '../../constants';
 import { RootStackParamList, HeartbeatResponse } from '../../types';
+import { deleteCredentials, deleteApiToken } from '../../hooks/useAuthHeaders';
 import { testConnection } from '../../api';
 import { spacing, borderRadius, fontSize } from '../../theme';
 import ScreenHeader from '../../components/common/ScreenHeader';
@@ -47,7 +48,16 @@ const SettingsScreen = () => {
         onPress: async () => {
           await logout();
           clearTokens();
-          await AsyncStorage.multiRemove([STORAGE_KEYS.AUTH_TOKENS, STORAGE_KEYS.USER]);
+          // TODO: OAuth access/refresh tokens (AUTH_TOKENS) still live in AsyncStorage.
+          // Moving them to SecureStore is out of scope here (touches AppContext init +
+          // api/client refresh flow); for now we hard-delete them on logout.
+          await AsyncStorage.multiRemove([
+            STORAGE_KEYS.AUTH_TOKENS,
+            STORAGE_KEYS.USER,
+            STORAGE_KEYS.AUTH_METHOD,
+          ]);
+          await deleteCredentials();
+          await deleteApiToken();
           setUser(null);
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         },
@@ -66,8 +76,11 @@ const SettingsScreen = () => {
           await AsyncStorage.multiRemove([
             STORAGE_KEYS.AUTH_TOKENS,
             STORAGE_KEYS.USER,
+            STORAGE_KEYS.AUTH_METHOD,
             STORAGE_KEYS.SERVER_CONFIG,
           ]);
+          await deleteCredentials();
+          await deleteApiToken();
           setUser(null);
           setServerConfig(null);
           navigation.reset({ index: 0, routes: [{ name: 'ServerConfig' }] });
@@ -180,7 +193,7 @@ const SettingsScreen = () => {
         {/* About */}
         <View style={styles.aboutSection}>
           <Text style={[styles.aboutTitle, { color: colors.textSecondary }]}>RoMM Connect</Text>
-          <Text style={[styles.aboutVersion, { color: colors.gray }]}>v0.2.0</Text>
+          <Text style={[styles.aboutVersion, { color: colors.gray }]}>v{APP_VERSION}</Text>
           <Text style={[styles.aboutFooter, { color: colors.gray }]}>
             A mobile client for RoMM ROM Manager
           </Text>

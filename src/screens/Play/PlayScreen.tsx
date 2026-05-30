@@ -22,6 +22,18 @@ const CORE_MAP: Record<string, string> = {
   arcade: 'mame2003', mame: 'mame2003',
 };
 
+// JS-safe literal for values injected INSIDE an HTML <script> block.
+// JSON.stringify alone is NOT enough: a value containing "</script>" can close
+// the tag even inside a JS string. We additionally escape < > & and the
+// U+2028/U+2029 line separators (illegal raw in JS string literals).
+const jsLiteral = (value: string): string =>
+  JSON.stringify(value)
+    .replace(/</g, '\\u003C')
+    .replace(/>/g, '\\u003E')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+
 const PlayScreen = () => {
   const { colors, serverConfig } = useApp();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -160,8 +172,8 @@ const PlayScreen = () => {
               stage.textContent = 'Loading state...';
               document.body.appendChild(stage);
 
-              fetch('${downloadUrl}', {
-                headers: { 'Authorization': '${authH}' }
+              fetch(${jsLiteral(downloadUrl)}, {
+                headers: { 'Authorization': ${jsLiteral(authH)} }
               })
               .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -240,6 +252,14 @@ const PlayScreen = () => {
       const fileIdsParam = fileIds && fileIds.length > 0 ? `?file_ids=${fileIds.join(',')}` : '';
       const romUrl = `${baseUrl}/api/roms/${romId}/content/${encodeURIComponent(romFsName)}${fileIdsParam}`;
 
+      // Escape for use as an HTML text node (loader title). jsLiteral is used
+      // separately for values injected into JS string positions below.
+      const escapeHtml = (s: string) =>
+        s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const romUrlJs = jsLiteral(romUrl);
+      const coreJs = jsLiteral(core);
+      const authHeaderJs = jsLiteral(authHeader);
+
       const html = `
 <!DOCTYPE html>
 <html>
@@ -265,7 +285,7 @@ const PlayScreen = () => {
 <body>
   <div id="game"></div>
   <div class="loader" id="loader">
-    <div class="loader-title">${romName.replace(/</g, '&lt;')}</div>
+    <div class="loader-title">${escapeHtml(romName)}</div>
     <div class="loader-subtitle" id="stage">Downloading ROM...</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="progress-text" id="progressText">0%</div>
@@ -328,7 +348,7 @@ const PlayScreen = () => {
 
     // === EmulatorJS Config ===
     window.EJS_player = '#game';
-    window.EJS_core = '${core}';
+    window.EJS_core = ${coreJs};
     window.EJS_color = '#8B74E8';
     window.EJS_startOnLoaded = true;
     window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
@@ -387,7 +407,7 @@ const PlayScreen = () => {
     };
     XMLHttpRequest.prototype.send = function() {
       if (this._romUrl) {
-        this.setRequestHeader('Authorization', '${authHeader}');
+        this.setRequestHeader('Authorization', ${authHeaderJs});
       }
       return origXHRSend.apply(this, arguments);
     };
@@ -397,9 +417,9 @@ const PlayScreen = () => {
     window.fetch = function(url, opts) {
       opts = opts || {};
       if (typeof url === 'string' && url.indexOf('/api/') >= 0 && !opts.headers) {
-        opts.headers = { 'Authorization': '${authHeader}' };
+        opts.headers = { 'Authorization': ${authHeaderJs} };
       } else if (typeof url === 'string' && url.indexOf('/api/') >= 0 && opts.headers && !opts.headers['Authorization']) {
-        opts.headers['Authorization'] = '${authHeader}';
+        opts.headers['Authorization'] = ${authHeaderJs};
       }
       return origFetch.call(this, url, opts);
     };
@@ -408,12 +428,12 @@ const PlayScreen = () => {
       try {
         // First check ROM size to decide strategy
         document.getElementById('stage').textContent = 'Checking ROM...';
-        var headRes = await origFetch('${romUrl}', { method: 'HEAD', headers: { 'Authorization': '${authHeader}' } });
+        var headRes = await origFetch(${romUrlJs}, { method: 'HEAD', headers: { 'Authorization': ${authHeaderJs} } });
         var romSize = parseInt(headRes.headers.get('content-length') || '0');
 
         // Always download with progress, but use ArrayBuffer for efficiency
         document.getElementById('stage').textContent = 'Downloading ROM...';
-        var res = await origFetch('${romUrl}', { headers: { 'Authorization': '${authHeader}' } });
+        var res = await origFetch(${romUrlJs}, { headers: { 'Authorization': ${authHeaderJs} } });
         if (!res.ok) throw new Error('ROM download failed: ' + res.status);
         var reader = res.body.getReader();
         var chunks = [], received = 0;
