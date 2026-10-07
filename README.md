@@ -13,12 +13,16 @@ A mobile client for [RoMM](https://github.com/rommapp/romm) (ROM Manager) - brow
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/server_config.png" width="200" alt="Server Config" />
-  <img src="docs/screenshots/login.png" width="200" alt="Login" />
-  <img src="docs/screenshots/home.png" width="200" alt="Home Dashboard" />
-  <img src="docs/screenshots/rom_detail.png" width="200" alt="ROM Detail" />
+  <img src="docs/screenshots/server_config.png" width="200" alt="Connect to a RoMM server" />
+  <img src="docs/screenshots/login.png" width="200" alt="Sign in with a RoMM API token" />
+  <img src="docs/screenshots/home.png" width="200" alt="Home dashboard with a demo library" />
+  <img src="docs/screenshots/platforms.png" width="200" alt="Browse platforms" />
+  <img src="docs/screenshots/collections.png" width="200" alt="Browse regular and smart collections" />
+  <img src="docs/screenshots/rom_detail.png" width="200" alt="ROM details and play progress" />
   <img src="docs/screenshots/emulator.png" width="200" alt="Emulator" />
 </p>
+
+The home and library screenshots use sample data.
 
 ---
 
