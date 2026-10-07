@@ -1,400 +1,351 @@
 // by Cleyvin
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   TouchableOpacity,
-  Dimensions,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-// Lazy import to avoid crash if native module not linked
-let FileSystem: any = null;
-try {
-  FileSystem = require('expo-file-system');
-} catch {}
 import { useApp } from '../../store/AppContext';
-import { getRom, getBaseUrl, getApiClient } from '../../api';
-import { getCurrentAuthToken } from '../../hooks/useAuthHeaders';
-import { STORAGE_KEYS } from '../../constants';
-import { Rom, RootStackParamList } from '../../types';
-import { getCoverUrl, getRomCoverUrl, formatFileSize } from '../../utils';
-import { spacing, borderRadius, fontSize } from '../../theme';
+import {
+  describeError,
+  getFreshBearer,
+  getRom,
+  getServerUrl,
+  romContentPath,
+  updateRomUser,
+  RomUserUpdate,
+} from '../../api';
+import { queryKeys } from '../../api/queryClient';
+import { getEmulationSupport } from '../../config/emulation';
+import { SCOPES } from '../../constants';
+import { Rom, RomStatus, RootStackParamList } from '../../types';
+import { downloadToUserFolder, DownloadProgress } from '../../utils/download';
+import { formatDate, formatFileSize, resourceUrl, romCoverUrl, romDownloadName, romTitle } from '../../utils';
+import { spacing, borderRadius, fontSize, IconName, ThemeColors } from '../../theme';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import ErrorState from '../../components/common/ErrorState';
+import RemoteImage from '../../components/common/RemoteImage';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const STATUS_OPTIONS: { value: RomStatus; label: string; icon: IconName }[] = [
+  { value: 'incomplete', label: 'Playing', icon: 'gamepad-variant' },
+  { value: 'finished', label: 'Finished', icon: 'flag-checkered' },
+  { value: 'completed_100', label: '100%', icon: 'trophy' },
+  { value: 'retired', label: 'Retired', icon: 'archive' },
+  { value: 'never_playing', label: 'Skipped', icon: 'cancel' },
+];
+
+// Sidecar files that are never the thing to boot.
+const NON_GAME_FILE = /\.(txt|nfo|md|jpg|jpeg|png|pdf|sfv)$/i;
 
 const RomDetailScreen = () => {
-  const { colors, serverConfig, credentials } = useApp();
+  const { colors, serverUrl, can } = useApp();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const route = useRoute<RouteProp<RootStackParamList, 'RomDetail'>>();
-  const { romId } = route.params;
+  const { romId } = useRoute<RouteProp<RootStackParamList, 'RomDetail'>>().params;
+  const queryClient = useQueryClient();
+  const { width } = useWindowDimensions();
 
-  const [rom, setRom] = useState<Rom | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [selectedFileId, setSelectedFileId] = useState<number | undefined>(undefined);
+  const [download, setDownload] = useState<DownloadProgress | null>(null);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
-  useEffect(() => {
-    const fetchRom = async () => {
-      try {
-        const data = await getRom(romId);
-        setRom(data);
-      } catch (err) {
-        console.error('Failed to fetch ROM:', err);
-        Alert.alert('Error', 'Failed to load ROM details', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
-      } finally {
-        setLoading(false);
+  const query = useQuery({ queryKey: queryKeys.rom(romId), queryFn: () => getRom(romId) });
+  const rom = query.data;
+
+  const userProps = useMutation({
+    mutationFn: (changes: RomUserUpdate) => updateRomUser(romId, changes),
+    // Show the change immediately and roll back if the server refuses it.
+    onMutate: async (changes) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.rom(romId) });
+      const previous = queryClient.getQueryData<Rom>(queryKeys.rom(romId));
+      if (previous?.rom_user) {
+        queryClient.setQueryData<Rom>(queryKeys.rom(romId), {
+          ...previous,
+          rom_user: { ...previous.rom_user, ...changes },
+        });
       }
-    };
-    fetchRom();
-  }, [romId]);
+      return { previous };
+    },
+    onError: (err, _changes, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.rom(romId), context.previous);
+      Alert.alert('Could not save', describeError(err));
+    },
+    onSuccess: (romUser) => {
+      const current = queryClient.getQueryData<Rom>(queryKeys.rom(romId));
+      if (current) queryClient.setQueryData<Rom>(queryKeys.rom(romId), { ...current, rom_user: romUser });
+    },
+  });
 
-  const [downloading, setDownloading] = useState(false);
-  const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
+  if (query.isPending) return <LoadingScreen message="Loading…" />;
+  if (!rom) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScreenHeader title="ROM" onBack={() => navigation.goBack()} />
+        <ErrorState error={query.error} onRetry={() => query.refetch()} />
+      </View>
+    );
+  }
 
-  // Auto-select .cue file or first track for multi-file ROMs
-  useEffect(() => {
-    if (rom?.files && rom.files.length > 1 && !selectedFileId) {
-      const cueFile = rom.files.find((f: any) => f.file_name.toLowerCase().endsWith('.cue'));
-      const firstBin = rom.files.find((f: any) =>
-        f.file_name.toLowerCase().endsWith('.bin') || f.file_name.toLowerCase().endsWith('.iso')
-      );
-      setSelectedFileId(cueFile?.id || firstBin?.id || rom.files[0].id);
-    }
-  }, [rom?.files]);
+  const title = romTitle(rom);
+  const emulation = getEmulationSupport(rom.platform_slug);
+  const canEditProgress = can(SCOPES.ROMS_USER_WRITE);
+  const gameFiles = (rom.files ?? []).filter((file) => !NON_GAME_FILE.test(file.file_name));
+  const isMultiFile = gameFiles.length > 1;
+  const screenshots = rom.merged_screenshots ?? [];
+  const genres = rom.metadatum?.genres ?? [];
+  const releaseYear = rom.metadatum?.first_release_date
+    ? new Date(rom.metadatum.first_release_date).getUTCFullYear()
+    : null;
+  const coverWidth = Math.min(width * 0.5, 240);
+  const romUser = rom.rom_user;
+  const saveCount = (rom.user_saves?.length ?? 0) + (rom.user_states?.length ?? 0);
 
-  const handlePlay = () => {
-    if (!rom) return;
-    // For multi-file ROMs, always pass a file_id to avoid huge ZIP download
-    const fileIds = selectedFileId ? [selectedFileId] : undefined;
-    navigation.navigate('Play', {
-      romId: rom.id,
-      romName: rom.name,
-      romFsName: rom.fs_name,
-      platformSlug: rom.platform_slug || '',
-      fileIds,
-    });
-  };
+  const handlePlay = () => navigation.navigate('Play', { romId: rom.id, fileId: selectedFileId });
 
   const handleDownload = async () => {
-    if (!rom || !serverConfig) return;
-    if (!FileSystem) {
-      Alert.alert('Not Available', 'Download is not available in this build. Use Expo Go.');
-      return;
-    }
-    setDownloading(true);
+    setDownload({ receivedBytes: 0, totalBytes: rom.fs_size_bytes || null });
     try {
-      const authToken = await getCurrentAuthToken();
-      const baseUrl = getBaseUrl(serverConfig);
-      const url = `${baseUrl}/api/roms/${rom.id}/content/${encodeURIComponent(rom.fs_name)}`;
-
-      // Download to cache first
-      const cacheUri = FileSystem.cacheDirectory + rom.fs_name;
-      const download = await FileSystem.downloadAsync(url, cacheUri, {
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      const saved = await downloadToUserFolder({
+        url: `${getServerUrl()}${romContentPath(rom)}`,
+        fileName: romDownloadName(rom),
+        bearer: await getFreshBearer(),
+        onProgress: setDownload,
       });
-
-      if (download.status === 200) {
-        // Move to Downloads using SAF (Storage Access Framework)
-        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-        if (permissions.granted) {
-          const fileContent = await FileSystem.readAsStringAsync(download.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          const newFile = await FileSystem.StorageAccessFramework.createFileAsync(
-            permissions.directoryUri,
-            rom.fs_name,
-            'application/octet-stream'
-          );
-          await FileSystem.writeAsStringAsync(newFile, fileContent, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          Alert.alert('Downloaded', `${rom.fs_name} saved successfully`);
-        } else {
-          Alert.alert('Permission Denied', 'Storage permission is required to save files');
-        }
-        // Clean cache
-        await FileSystem.deleteAsync(download.uri, { idempotent: true });
-      } else {
-        Alert.alert('Error', `Download failed (${download.status})`);
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Download failed');
+      if (saved) Alert.alert('Download complete', `${romDownloadName(rom)} was saved to the folder you chose.`);
+    } catch (err) {
+      Alert.alert('Download failed', describeError(err, 'The file could not be saved'));
     } finally {
-      setDownloading(false);
+      setDownload(null);
     }
   };
 
-  if (loading) return <LoadingScreen message="Loading ROM details..." />;
-  if (!rom) return null;
-
-  const coverUrl = getRomCoverUrl(serverConfig, rom, credentials || undefined);
-  const screenshots = rom.url_screenshots || [];
+  const downloadLabel = () => {
+    if (!download) return 'Download';
+    if (download.totalBytes) return `${Math.min(99, Math.round((download.receivedBytes / download.totalBytes) * 100))}%`;
+    return formatFileSize(download.receivedBytes);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScreenHeader title={rom.name} onBack={() => navigation.goBack()} />
+      <ScreenHeader title={title} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Cover Image */}
         <View style={styles.coverSection}>
-          {coverUrl ? (
-            <Image source={{ uri: coverUrl }} style={styles.coverImage} resizeMode="contain" />
-          ) : (
-            <View style={[styles.noCover, { backgroundColor: colors.topLayer }]}>
-              <MaterialCommunityIcons name="image-off-outline" size={64} color={colors.gray} />
-            </View>
-          )}
+          <RemoteImage
+            sources={[romCoverUrl(serverUrl, rom, 'large'), rom.url_cover]}
+            style={[styles.cover, { width: coverWidth, height: coverWidth / (3 / 4), backgroundColor: colors.topLayer }]}
+            contentFit="contain"
+            accessibilityLabel={`${title} cover`}
+            fallback={
+              <View style={styles.noCover}>
+                <MaterialCommunityIcons name="image-off-outline" size={56} color={colors.gray} />
+              </View>
+            }
+          />
         </View>
 
-        {/* Title and Meta */}
-        <View style={styles.infoSection}>
-          <Text style={[styles.romTitle, { color: colors.text }]}>{rom.name}</Text>
+        <View style={styles.body}>
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
 
-          <View style={styles.metaRow}>
-            {rom.platform_name && (
-              <View style={[styles.metaChip, { backgroundColor: colors.primary + '20' }]}>
-                <MaterialCommunityIcons name="gamepad-variant" size={12} color={colors.primary} />
-                <Text style={[styles.metaChipText, { color: colors.primary }]}>
-                  {rom.platform_name}
-                </Text>
-              </View>
-            )}
-            <View style={[styles.metaChip, { backgroundColor: colors.topLayer }]}>
-              <MaterialCommunityIcons name="harddisk" size={12} color={colors.textSecondary} />
-              <Text style={[styles.metaChipText, { color: colors.textSecondary }]}>
-                {formatFileSize(rom.fs_size_bytes)}
-              </Text>
-            </View>
+          <View style={styles.chipRow}>
+            <Chip colors={colors} icon="gamepad-variant" text={rom.platform_custom_name || rom.platform_display_name || rom.platform_slug} tint={colors.primary} />
+            <Chip colors={colors} icon="harddisk" text={formatFileSize(rom.fs_size_bytes)} />
+            {releaseYear && <Chip colors={colors} icon="calendar" text={String(releaseYear)} />}
+            {saveCount > 0 && <Chip colors={colors} icon="cloud-check" text={`${saveCount} cloud save${saveCount === 1 ? '' : 's'}`} tint={colors.success} />}
           </View>
 
-          {/* Regions & Languages */}
-          {(rom.regions?.length || rom.languages?.length) ? (
-            <View style={styles.tagsRow}>
-              {rom.regions?.map((r) => (
-                <View key={r} style={[styles.tag, { backgroundColor: colors.info + '20' }]}>
-                  <Text style={[styles.tagText, { color: colors.info }]}>{r}</Text>
-                </View>
-              ))}
-              {rom.languages?.map((l) => (
-                <View key={l} style={[styles.tag, { backgroundColor: colors.accent + '20' }]}>
-                  <Text style={[styles.tagText, { color: colors.accent }]}>{l}</Text>
-                </View>
-              ))}
+          {(!!rom.regions?.length || !!rom.languages?.length || genres.length > 0) && (
+            <View style={styles.chipRow}>
+              {rom.regions?.map((region) => <Tag key={`r-${region}`} text={region} tint={colors.info} />)}
+              {rom.languages?.map((language) => <Tag key={`l-${language}`} text={language} tint={colors.accent} />)}
+              {genres.map((genre) => <Tag key={`g-${genre}`} text={genre} tint={colors.secondary} />)}
             </View>
-          ) : null}
+          )}
 
-          {/* Genres */}
-          {rom.genres && rom.genres.length > 0 && (
-            <View style={styles.tagsRow}>
-              {rom.genres.map((g) => (
-                <View key={g} style={[styles.tag, { backgroundColor: colors.secondary + '20' }]}>
-                  <Text style={[styles.tagText, { color: colors.secondary }]}>{g}</Text>
-                </View>
+          {rom.missing_from_fs && (
+            <Notice colors={colors} icon="alert" tint={colors.warning} text="The server can no longer find this file on disk." />
+          )}
+
+          {isMultiFile && emulation.core && (
+            <View style={[styles.card, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>What to load</Text>
+              <FileOption
+                colors={colors}
+                label="All files"
+                detail="Recommended for multi-disc and cue/bin games"
+                selected={selectedFileId === undefined}
+                onPress={() => setSelectedFileId(undefined)}
+              />
+              {gameFiles.map((file) => (
+                <FileOption
+                  key={file.id}
+                  colors={colors}
+                  label={file.file_name}
+                  detail={formatFileSize(file.file_size_bytes)}
+                  selected={selectedFileId === file.id}
+                  onPress={() => setSelectedFileId(file.id)}
+                />
               ))}
             </View>
           )}
 
-          {/* Summary */}
-          {rom.summary && (
-            <View style={styles.summaryContainer}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Description</Text>
-              <Text style={[styles.summary, { color: colors.text }]}>{rom.summary}</Text>
-            </View>
+          <View style={styles.actionRow}>
+            {emulation.core && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.playButton, { backgroundColor: colors.success }]}
+                onPress={handlePlay}
+                disabled={rom.missing_from_fs}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons name="play" size={24} color="#fff" />
+                <Text style={styles.actionText}>Play</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={handleDownload}
+              disabled={!!download || rom.missing_from_fs}
+              accessibilityRole="button"
+            >
+              {download ? <ActivityIndicator color="#fff" size="small" /> : <MaterialCommunityIcons name="download" size={22} color="#fff" />}
+              <Text style={styles.actionText}>{downloadLabel()}</Text>
+            </TouchableOpacity>
+          </View>
+          {!emulation.core && (
+            <Notice
+              colors={colors}
+              icon="information-outline"
+              tint={colors.textSecondary}
+              text="This platform has no in-app emulator. You can still download the file."
+            />
           )}
 
-          {/* Your Progress - Interactive */}
-          {rom.rom_user && (
-            <View style={[styles.userStatusCard, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Your Progress</Text>
+          {romUser && (
+            <View style={[styles.card, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Your progress</Text>
+              <Text style={[styles.progressLine, { color: colors.text }]}>
+                {romUser.last_played ? `Last played ${formatDate(romUser.last_played)}` : 'Not played yet'}
+              </Text>
 
-              {/* Last Played & Now Playing */}
-              {rom.rom_user.last_played && (
-                <View style={styles.statusItem}>
-                  <MaterialCommunityIcons name="clock-outline" size={16} color={colors.info} />
-                  <Text style={[styles.statusText, { color: colors.text }]}>
-                    Last played: {new Date(rom.rom_user.last_played).toLocaleDateString()}
-                  </Text>
-                </View>
-              )}
-              {rom.rom_user.now_playing && (
-                <View style={styles.statusItem}>
-                  <MaterialCommunityIcons name="play-circle" size={16} color={colors.success} />
-                  <Text style={[styles.statusText, { color: colors.success }]}>Now Playing</Text>
-                </View>
-              )}
-
-              {/* Interactive Rating (1-5 stars) */}
-              <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>Rating</Text>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Rating</Text>
               <View style={styles.starsRow}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <TouchableOpacity
-                    key={star}
-                    onPress={async () => {
-                      const newRating = star * 2; // RoMM uses 0-10 scale
-                      try {
-                        const client = getApiClient();
-                        await client.put(`/api/roms/${rom.id}/props`, { rating: newRating });
-                        setRom({ ...rom, rom_user: { ...rom.rom_user!, rating: newRating } });
-                      } catch {}
-                    }}
-                  >
-                    <MaterialCommunityIcons
-                      name={(rom.rom_user.rating || 0) >= star * 2 ? 'star' : 'star-outline'}
-                      size={28}
-                      color={colors.warning}
-                    />
-                  </TouchableOpacity>
-                ))}
-                <Text style={[styles.ratingText, { color: colors.textSecondary }]}>
-                  {rom.rom_user.rating ? `${rom.rom_user.rating}/10` : ''}
-                </Text>
+                {[1, 2, 3, 4, 5].map((star) => {
+                  // RoMM stores ratings on a 0-10 scale.
+                  const value = star * 2;
+                  const filled = romUser.rating >= value;
+                  return (
+                    <TouchableOpacity
+                      key={star}
+                      disabled={!canEditProgress}
+                      onPress={() => userProps.mutate({ rating: romUser.rating === value ? 0 : value })}
+                      accessibilityLabel={`Rate ${star} of 5`}
+                      hitSlop={4}
+                    >
+                      <MaterialCommunityIcons name={filled ? 'star' : 'star-outline'} size={30} color={colors.warning} />
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
-              {/* Game Status Selector */}
-              <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>Status</Text>
-              <View style={styles.statusChips}>
-                {[
-                  { value: null, label: 'None', icon: 'minus-circle-outline' },
-                  { value: 'INCOMPLETE', label: 'Playing', icon: 'gamepad-variant' },
-                  { value: 'FINISHED', label: 'Finished', icon: 'flag-checkered' },
-                  { value: 'COMPLETED_100', label: '100%', icon: 'trophy' },
-                  { value: 'RETIRED', label: 'Retired', icon: 'archive' },
-                ].map((s) => (
-                  <TouchableOpacity
-                    key={s.label}
-                    onPress={async () => {
-                      try {
-                        const client = getApiClient();
-                        await client.put(`/api/roms/${rom.id}/props`, { status: s.value });
-                        setRom({ ...rom, rom_user: { ...rom.rom_user!, status: s.value as any } });
-                      } catch {}
-                    }}
-                    style={[
-                      styles.statusChip,
-                      {
-                        backgroundColor: rom.rom_user.status === s.value ? colors.primary + '30' : colors.surface,
-                        borderColor: rom.rom_user.status === s.value ? colors.primary : colors.border,
-                      },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name={s.icon as any}
-                      size={14}
-                      color={rom.rom_user.status === s.value ? colors.primary : colors.textSecondary}
-                    />
-                    <Text style={[styles.statusChipText, { color: rom.rom_user.status === s.value ? colors.primary : colors.textSecondary }]}>
-                      {s.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Status</Text>
+              <View style={styles.statusRow}>
+                {STATUS_OPTIONS.map((option) => {
+                  const active = romUser.status === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      disabled={!canEditProgress}
+                      onPress={() => userProps.mutate({ status: active ? null : option.value })}
+                      style={[
+                        styles.statusChip,
+                        {
+                          backgroundColor: active ? colors.primary + '30' : colors.surface,
+                          borderColor: active ? colors.primary : colors.border,
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <MaterialCommunityIcons name={option.icon} size={14} color={active ? colors.primary : colors.textSecondary} />
+                      <Text style={[styles.statusChipText, { color: active ? colors.primary : colors.textSecondary }]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  disabled={!canEditProgress}
+                  onPress={() => userProps.mutate({ backlogged: !romUser.backlogged })}
+                  style={[
+                    styles.statusChip,
+                    {
+                      backgroundColor: romUser.backlogged ? colors.accent + '30' : colors.surface,
+                      borderColor: romUser.backlogged ? colors.accent : colors.border,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: romUser.backlogged }}
+                >
+                  <MaterialCommunityIcons
+                    name="bookmark"
+                    size={14}
+                    color={romUser.backlogged ? colors.accent : colors.textSecondary}
+                  />
+                  <Text style={[styles.statusChipText, { color: romUser.backlogged ? colors.accent : colors.textSecondary }]}>
+                    Backlog
+                  </Text>
+                </TouchableOpacity>
               </View>
+            </View>
+          )}
 
-              {!rom.rom_user.last_played && !rom.rom_user.status && (
-                <Text style={[styles.statusText, { color: colors.gray, marginTop: 8 }]}>
-                  Not played yet. Tap Play ROM to start!
-                </Text>
+          {!!rom.summary && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Description</Text>
+              <Text style={[styles.summary, { color: colors.text }]} numberOfLines={summaryExpanded ? undefined : 6}>
+                {rom.summary}
+              </Text>
+              {rom.summary.length > 280 && (
+                <TouchableOpacity onPress={() => setSummaryExpanded((expanded) => !expanded)} hitSlop={8}>
+                  <Text style={[styles.more, { color: colors.primary }]}>{summaryExpanded ? 'Show less' : 'Read more'}</Text>
+                </TouchableOpacity>
               )}
             </View>
           )}
 
-          {/* Screenshots */}
           {screenshots.length > 0 && (
-            <View style={styles.screenshotsSection}>
+            <View style={styles.section}>
               <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Screenshots</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {screenshots.map((url, i) => (
-                  <Image
-                    key={i}
-                    source={{ uri: getCoverUrl(serverConfig, url) || url }}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.screenshots}>
+                {screenshots.map((path) => (
+                  <RemoteImage
+                    key={path}
+                    sources={[resourceUrl(serverUrl, path)]}
                     style={[styles.screenshot, { backgroundColor: colors.topLayer }]}
-                    resizeMode="cover"
+                    fallback={null}
                   />
                 ))}
               </ScrollView>
             </View>
           )}
 
-          {/* File Selector for multi-file ROMs */}
-          {rom.files && rom.files.length > 1 && (
-            <View style={[styles.fileSelector, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Select File</Text>
-              {rom.files
-                .filter((f: any) => !f.file_name.endsWith('.txt'))
-                .map((f: any) => (
-                <TouchableOpacity
-                  key={f.id}
-                  onPress={() => setSelectedFileId(f.id === selectedFileId ? null : f.id)}
-                  style={[
-                    styles.fileOption,
-                    {
-                      backgroundColor: selectedFileId === f.id ? colors.primary + '30' : 'transparent',
-                      borderColor: selectedFileId === f.id ? colors.primary : colors.border,
-                    },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name={selectedFileId === f.id ? 'radiobox-marked' : 'radiobox-blank'}
-                    size={18}
-                    color={selectedFileId === f.id ? colors.primary : colors.gray}
-                  />
-                  <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
-                    {f.file_name}
-                  </Text>
-                  <Text style={[styles.fileSize, { color: colors.textSecondary }]}>
-                    {formatFileSize(f.file_size_bytes)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              <Text style={[styles.fileHint, { color: colors.textSecondary }]}>
-                Select the .cue file for best compatibility
-              </Text>
-            </View>
-          )}
-
-          {/* Play Button */}
-          <TouchableOpacity
-            style={[styles.playButton, { backgroundColor: colors.success }]}
-            onPress={handlePlay}
-          >
-            <MaterialCommunityIcons name="play-circle" size={24} color="#fff" />
-            <Text style={styles.playText}>Play ROM</Text>
-          </TouchableOpacity>
-
-          {/* Download Button */}
-          <TouchableOpacity
-            style={[styles.downloadButton, { backgroundColor: colors.primary }]}
-            onPress={handleDownload}
-            disabled={downloading}
-          >
-            {downloading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="download" size={22} color="#fff" />
-                <Text style={styles.downloadText}>Download ROM</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* File Info */}
-          <View style={[styles.fileInfo, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>File Information</Text>
-            <InfoRow colors={colors} label="File Name" value={rom.fs_name} />
+          <View style={[styles.card, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>File</Text>
+            <InfoRow colors={colors} label="Name" value={rom.fs_name} />
             <InfoRow colors={colors} label="Size" value={formatFileSize(rom.fs_size_bytes)} />
-            {rom.revision && <InfoRow colors={colors} label="Revision" value={rom.revision} />}
-            {rom.igdb_id && <InfoRow colors={colors} label="IGDB ID" value={rom.igdb_id.toString()} />}
-            {rom.moby_id && <InfoRow colors={colors} label="MobyGames ID" value={rom.moby_id.toString()} />}
+            {gameFiles.length > 1 && <InfoRow colors={colors} label="Files" value={String(gameFiles.length)} />}
+            {!!rom.revision && <InfoRow colors={colors} label="Revision" value={rom.revision} />}
+            {emulation.core && <InfoRow colors={colors} label="Emulator core" value={emulation.core} />}
           </View>
         </View>
       </ScrollView>
@@ -402,235 +353,178 @@ const RomDetailScreen = () => {
   );
 };
 
-const InfoRow = ({ colors, label, value }: { colors: any; label: string; value: string }) => (
-  <View style={styles.infoRow}>
+const Chip = ({ colors, icon, text, tint }: { colors: ThemeColors; icon: IconName; text: string; tint?: string }) => (
+  <View style={[styles.chip, { backgroundColor: tint ? tint + '20' : colors.topLayer }]}>
+    <MaterialCommunityIcons name={icon} size={13} color={tint ?? colors.textSecondary} />
+    <Text style={[styles.chipText, { color: tint ?? colors.textSecondary }]}>{text}</Text>
+  </View>
+);
+
+const Tag = ({ text, tint }: { text: string; tint: string }) => (
+  <View style={[styles.tag, { backgroundColor: tint + '20' }]}>
+    <Text style={[styles.tagText, { color: tint }]}>{text}</Text>
+  </View>
+);
+
+const Notice = ({ colors, icon, tint, text }: { colors: ThemeColors; icon: IconName; tint: string; text: string }) => (
+  <View style={[styles.notice, { backgroundColor: colors.topLayer }]}>
+    <MaterialCommunityIcons name={icon} size={18} color={tint} />
+    <Text style={[styles.noticeText, { color: colors.text }]}>{text}</Text>
+  </View>
+);
+
+const FileOption = ({
+  colors,
+  label,
+  detail,
+  selected,
+  onPress,
+}: {
+  colors: ThemeColors;
+  label: string;
+  detail: string;
+  selected: boolean;
+  onPress: () => void;
+}) => (
+  <TouchableOpacity
+    onPress={onPress}
+    style={[
+      styles.fileOption,
+      { backgroundColor: selected ? colors.primary + '25' : 'transparent', borderColor: selected ? colors.primary : colors.border },
+    ]}
+    accessibilityRole="radio"
+    accessibilityState={{ selected }}
+  >
+    <MaterialCommunityIcons
+      name={selected ? 'radiobox-marked' : 'radiobox-blank'}
+      size={18}
+      color={selected ? colors.primary : colors.textSecondary}
+    />
+    <View style={styles.fileOptionBody}>
+      <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text style={[styles.fileDetail, { color: colors.textSecondary }]} numberOfLines={1}>
+        {detail}
+      </Text>
+    </View>
+  </TouchableOpacity>
+);
+
+const InfoRow = ({ colors, label, value }: { colors: ThemeColors; label: string; value: string }) => (
+  <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
     <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{label}</Text>
-    <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={1}>{value}</Text>
+    <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={2}>
+      {value}
+    </Text>
   </View>
 );
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { paddingBottom: 40 },
-  coverSection: {
-    alignItems: 'center',
-    paddingVertical: spacing.lg,
-  },
-  coverImage: {
-    width: SCREEN_WIDTH * 0.5,
-    height: SCREEN_WIDTH * 0.75,
-    borderRadius: borderRadius.lg,
-  },
-  noCover: {
-    width: SCREEN_WIDTH * 0.5,
-    height: SCREEN_WIDTH * 0.75,
-    borderRadius: borderRadius.lg,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  infoSection: {
-    paddingHorizontal: spacing.md,
-  },
-  romTitle: {
-    fontSize: fontSize.xxl,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  metaRow: {
+  coverSection: { alignItems: 'center', paddingVertical: spacing.lg },
+  cover: { borderRadius: borderRadius.lg },
+  noCover: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  body: { paddingHorizontal: spacing.md },
+  title: { fontSize: fontSize.xxl, fontWeight: '700', textAlign: 'center', marginBottom: spacing.sm },
+  chipRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
     flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
     marginBottom: spacing.sm,
   },
-  metaChip: {
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: borderRadius.round,
-    marginHorizontal: 4,
-    marginBottom: 4,
   },
-  metaChipText: {
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  tagsRow: {
+  chipText: { fontSize: fontSize.sm, fontWeight: '600' },
+  tag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
+  tagText: { fontSize: fontSize.sm, fontWeight: '500' },
+  notice: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.sm,
   },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: borderRadius.sm,
-    margin: 2,
+  noticeText: { flex: 1, fontSize: fontSize.md, lineHeight: 19 },
+  card: {
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    marginTop: spacing.md,
   },
-  tagText: {
-    fontSize: fontSize.xs,
-    fontWeight: '500',
-  },
+  section: { marginTop: spacing.lg },
   sectionLabel: {
     fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: spacing.sm,
-  },
-  summaryContainer: {
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
-  },
-  summary: {
-    fontSize: fontSize.md,
-    lineHeight: 22,
-  },
-  userStatusCard: {
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    marginBottom: spacing.md,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  statusItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    marginBottom: 6,
-  },
-  statusText: {
-    fontSize: fontSize.md,
-    marginLeft: 6,
-  },
-  ratingLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginTop: spacing.sm,
-    marginBottom: 4,
-  },
-  starsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  ratingText: {
-    fontSize: fontSize.sm,
-    marginLeft: 8,
-  },
-  statusChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  statusChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: borderRadius.round,
-    borderWidth: 1,
-  },
-  statusChipText: {
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  screenshotsSection: {
-    marginBottom: spacing.md,
-  },
-  screenshot: {
-    width: 200,
-    height: 112,
-    borderRadius: borderRadius.md,
-    marginRight: spacing.sm,
-  },
-  fileSelector: {
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
     marginBottom: spacing.sm,
   },
   fileOption: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     padding: 10,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     marginTop: spacing.xs,
   },
-  fileName: {
+  fileOptionBody: { flex: 1 },
+  fileName: { fontSize: fontSize.md, fontWeight: '500' },
+  fileDetail: { fontSize: fontSize.sm, marginTop: 1 },
+  actionRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  actionButton: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 52,
+    borderRadius: borderRadius.lg,
+  },
+  playButton: { flex: 1.4 },
+  actionText: { color: '#fff', fontSize: fontSize.lg, fontWeight: '700' },
+  progressLine: { fontSize: fontSize.md },
+  fieldLabel: {
     fontSize: fontSize.sm,
-    marginLeft: 8,
-  },
-  fileSize: {
-    fontSize: fontSize.xs,
-    marginLeft: 4,
-  },
-  fileHint: {
-    fontSize: fontSize.xs,
-    fontStyle: 'italic',
-    marginTop: spacing.sm,
-    textAlign: 'center',
-  },
-  playButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 52,
-    borderRadius: borderRadius.lg,
+    fontWeight: '600',
     marginTop: spacing.md,
+    marginBottom: 6,
   },
-  playText: {
-    color: '#fff',
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  downloadButton: {
+  starsRow: { flexDirection: 'row', gap: 4 },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  statusChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    height: 52,
-    borderRadius: borderRadius.lg,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  downloadText: {
-    color: '#fff',
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  fileInfo: {
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: borderRadius.round,
     borderWidth: 1,
   },
+  statusChipText: { fontSize: fontSize.sm, fontWeight: '600' },
+  summary: { fontSize: fontSize.md, lineHeight: 22 },
+  more: { fontSize: fontSize.md, fontWeight: '600', marginTop: 6 },
+  screenshots: { gap: spacing.sm },
+  screenshot: { width: 220, height: 124, borderRadius: borderRadius.md },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    gap: 12,
+    paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
-  infoLabel: {
-    fontSize: fontSize.sm,
-    flex: 1,
-  },
-  infoValue: {
-    fontSize: fontSize.sm,
-    fontWeight: '500',
-    flex: 2,
-    textAlign: 'right',
-  },
+  infoLabel: { fontSize: fontSize.md },
+  infoValue: { fontSize: fontSize.md, fontWeight: '500', flex: 1, textAlign: 'right' },
 });
 
 export default RomDetailScreen;

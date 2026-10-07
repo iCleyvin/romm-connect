@@ -1,162 +1,99 @@
 // by Cleyvin
 
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  TextInput,
-  ActivityIndicator,
-} from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useMemo, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../../store/AppContext';
 import { getRoms } from '../../api';
-import { Rom, RootStackParamList } from '../../types';
-import { spacing, borderRadius, fontSize } from '../../theme';
-import RomCard from '../../components/cards/RomCard';
-import ScreenHeader from '../../components/common/ScreenHeader';
-import EmptyState from '../../components/common/EmptyState';
+import { queryKeys } from '../../api/queryClient';
 import { ROM_PAGE_SIZE } from '../../constants';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { RootStackParamList } from '../../types';
+import { formatCount } from '../../utils';
+import ScreenHeader from '../../components/common/ScreenHeader';
+import SearchBar from '../../components/common/SearchBar';
+import RomGrid from '../../components/common/RomGrid';
+import EmptyState from '../../components/common/EmptyState';
+import ErrorState from '../../components/common/ErrorState';
+import LoadingScreen from '../../components/common/LoadingScreen';
 
 const RomGalleryScreen = () => {
   const { colors } = useApp();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const route = useRoute<RouteProp<RootStackParamList, 'RomGallery'>>();
-  const { platformId, platformName } = route.params;
-
-  const [roms, setRoms] = useState<Rom[]>([]);
+  const navigation = useNavigation();
+  const { title, platformId, collectionId, smartCollectionId } =
+    useRoute<RouteProp<RootStackParamList, 'RomGallery'>>().params;
   const [search, setSearch] = useState('');
-  const [offset, setOffset] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const searchTerm = useDebouncedValue(search.trim());
 
-  const fetchRoms = async (currentOffset: number = 0, append: boolean = false) => {
-    try {
-      const data = await getRoms({
-        platform_id: platformId,
-        search_term: search.trim() || undefined,
-        offset: currentOffset,
+  const scope = useMemo(
+    () => ({ platformId, collectionId, smartCollectionId, searchTerm }),
+    [platformId, collectionId, smartCollectionId, searchTerm],
+  );
+
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.roms(scope),
+    queryFn: ({ pageParam }) =>
+      getRoms({
+        ...scope,
+        // With a search term the server ranks by relevance unless told otherwise.
+        orderBy: searchTerm ? undefined : 'name',
+        orderDir: 'asc',
+        offset: pageParam,
         limit: ROM_PAGE_SIZE,
-        order_by: 'name',
-        order_dir: 'asc',
-      });
-      const items = data.items || [];
-      setRoms(prev => append ? [...prev, ...items] : items);
-      setTotal(data.total || 0);
-      setOffset(currentOffset + items.length);
-    } catch (err) {
-      console.error('Failed to fetch ROMs:', err);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
-    }
-  };
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce((count, page) => count + page.items.length, 0);
+      const more = lastPage.total != null ? loaded < lastPage.total : lastPage.items.length === ROM_PAGE_SIZE;
+      return more && lastPage.items.length > 0 ? loaded : undefined;
+    },
+  });
 
-  // Debounce search to avoid firing on every keystroke
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(true);
-      setOffset(0);
-      fetchRoms(0, false);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    setOffset(0);
-    fetchRoms(0, false);
-  };
-
-  const onEndReached = () => {
-    if (offset < total && !loadingMore) {
-      setLoadingMore(true);
-      fetchRoms(offset, true);
-    }
-  };
+  const roms = useMemo(() => {
+    // Pages can overlap if the library changes between requests.
+    const seen = new Set<number>();
+    return (query.data?.pages ?? []).flatMap((page) => page.items).filter((rom) => !seen.has(rom.id) && seen.add(rom.id));
+  }, [query.data]);
+  const total = query.data?.pages[0]?.total;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenHeader
-        title={platformName}
-        subtitle={`${roms.length} ROMs`}
+        title={title}
+        subtitle={total != null ? formatCount(total, 'ROM') : undefined}
         onBack={() => navigation.goBack()}
       />
+      <SearchBar value={search} onChangeText={setSearch} placeholder={`Search in ${title}`} />
 
-      <View style={[styles.searchContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
-        <MaterialCommunityIcons name="magnify" size={20} color={colors.textSecondary} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search ROMs..."
-          placeholderTextColor={colors.placeholder}
-          value={search}
-          onChangeText={setSearch}
+      {query.isPending ? (
+        <LoadingScreen />
+      ) : query.isError && roms.length === 0 ? (
+        <ErrorState error={query.error} onRetry={() => query.refetch()} />
+      ) : (
+        <RomGrid
+          roms={roms}
+          refreshing={query.isRefetching && !query.isFetchingNextPage}
+          onRefresh={() => query.refetch()}
+          onEndReached={() => {
+            if (query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage();
+          }}
+          loadingMore={query.isFetchingNextPage}
+          empty={
+            <EmptyState
+              icon="disc-alert"
+              title={searchTerm ? 'No matches' : 'Nothing here yet'}
+              subtitle={searchTerm ? `No ROM matches “${searchTerm}”.` : 'This section has no ROMs.'}
+            />
+          }
         />
-      </View>
-
-      <FlatList
-        data={roms}
-        keyExtractor={(item) => item.id.toString()}
-        numColumns={3}
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-        }
-        onEndReached={onEndReached}
-        onEndReachedThreshold={0.3}
-        renderItem={({ item }) => (
-          <RomCard
-            rom={item}
-            onPress={() => navigation.navigate('RomDetail', { romId: item.id })}
-          />
-        )}
-        ListEmptyComponent={
-          loading ? null : (
-            <EmptyState icon="disc-alert" title="No ROMs found" subtitle="Try adjusting your search" />
-          )
-        }
-        ListFooterComponent={
-          loadingMore ? (
-            <View style={styles.footer}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
-          ) : null
-        }
-      />
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    margin: spacing.md,
-    paddingHorizontal: 12,
-    height: 44,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: fontSize.md,
-  },
-  list: {
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.lg,
-  },
-  footer: {
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
 });
 
 export default RomGalleryScreen;

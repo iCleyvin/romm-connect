@@ -23,13 +23,25 @@ jobs:
           echo "$HOME/android-sdk/build-tools/35.0.0" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
 
       - name: Expo prebuild
         run: npx expo prebuild --platform android --clean
 
       - name: Configure release signing
+        env:
+          # Set these in the repository's Actions secrets; never commit them.
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Add the ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_PASSWORD repository secrets to sign the release."
+            exit 1
+          fi
+
           python3 - << 'PYEOF'
           import re
 
@@ -60,13 +72,16 @@ jobs:
               count=1
           )
 
-          content = re.sub(
-              r'(buildTypes \{[^}]*?release \{[^}]*?)(signingConfig signingConfigs\.debug)',
-              r'\1signingConfig signingConfigs.release',
-              content,
-              count=1,
-              flags=re.DOTALL
+          build_types = content.index("    buildTypes {")
+          release_start = content.index("        release {", build_types)
+          release_end = content.index("\n        }", release_start)
+          release_block = content[release_start:release_end]
+          release_block = release_block.replace(
+              "signingConfig signingConfigs.debug",
+              "signingConfig signingConfigs.release",
+              1,
           )
+          content = content[:release_start] + release_block + content[release_end:]
 
           with open(gradle_path, "w") as f:
               f.write(content)
@@ -76,9 +91,9 @@ jobs:
 
           printf "%s\n" \
             "storeFile=$HOME/keystores/romm-connect.keystore" \
-            "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            "storePassword=$KEYSTORE_PASSWORD" \
             "keyAlias=romm-connect" \
-            "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" \
+            "keyPassword=$KEY_PASSWORD" \
             > android/keystore.properties
 
           echo "keystore.properties created"

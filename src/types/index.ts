@@ -1,11 +1,5 @@
 // by Cleyvin
 
-export interface ServerConfig {
-  host: string;
-  port: string;
-  useHttps: boolean;
-}
-
 export interface AuthTokens {
   access_token: string;
   refresh_token: string;
@@ -14,13 +8,23 @@ export interface AuthTokens {
   refresh_expires: number;
 }
 
+export type UserRole = 'viewer' | 'editor' | 'admin';
+
 export interface User {
   id: number;
   username: string;
-  email?: string;
-  role: 'viewer' | 'editor' | 'admin';
+  email?: string | null;
+  role: UserRole;
   enabled: boolean;
-  avatar_path?: string;
+  avatar_path?: string | null;
+  oauth_scopes?: string[];
+}
+
+export interface Firmware {
+  id: number;
+  platform_id: number;
+  file_name: string;
+  file_size_bytes: number;
 }
 
 export interface Platform {
@@ -28,48 +32,15 @@ export interface Platform {
   slug: string;
   fs_slug: string;
   name: string;
-  custom_name?: string;
-  category?: string;
-  generation?: number;
-  family_name?: string;
-  family_slug?: string;
-  url_logo?: string;
-  aspect_ratio: string;
+  custom_name?: string | null;
+  display_name?: string | null;
+  category?: string | null;
+  generation?: number | null;
+  family_name?: string | null;
+  url_logo?: string | null;
   rom_count: number;
   fs_size_bytes: number;
-  igdb_id?: number;
-  moby_id?: number;
-}
-
-export interface Rom {
-  id: number;
-  fs_name: string;
-  name: string;
-  slug: string;
-  summary?: string;
-  platform_id: number;
-  platform_slug?: string;
-  platform_name?: string;
-  path_cover_s?: string;
-  path_cover_l?: string;
-  path_cover_small?: string;
-  path_cover_large?: string;
-  url_cover?: string;
-  path_screenshots?: string[];
-  has_manual: boolean;
-  url_screenshots?: string[];
-  regions?: string[];
-  languages?: string[];
-  tags?: string[];
-  genres?: string[];
-  franchises?: string[];
-  revision?: string;
-  fs_size_bytes: number;
-  igdb_id?: number;
-  moby_id?: number;
-  rom_user?: RomUser;
-  files?: RomFile[];
-  has_multiple_files?: boolean;
+  firmware?: Firmware[];
 }
 
 export interface RomFile {
@@ -80,56 +51,95 @@ export interface RomFile {
   file_size_bytes: number;
 }
 
+export type RomStatus = 'incomplete' | 'finished' | 'completed_100' | 'retired' | 'never_playing';
+
 export interface RomUser {
-  rating?: number;
-  completion?: number;
-  difficulty?: number;
-  status?: 'INCOMPLETE' | 'FINISHED' | 'COMPLETED_100' | 'RETIRED' | 'NEVER_PLAYING';
-  last_played?: string;
+  rating: number;
+  difficulty: number;
+  completion: number;
+  status: RomStatus | null;
+  last_played: string | null;
   backlogged: boolean;
   now_playing: boolean;
   hidden: boolean;
-  note_raw_markdown?: string;
 }
+
+export interface RomMetadata {
+  genres?: string[];
+  franchises?: string[];
+  companies?: string[];
+  game_modes?: string[];
+  first_release_date?: number | null;
+  average_rating?: number | null;
+}
+
+export interface Rom {
+  id: number;
+  // Unmatched ROMs have no metadata name; use `romTitle()` for display.
+  name: string | null;
+  slug?: string | null;
+  summary?: string | null;
+  fs_name: string;
+  fs_name_no_tags?: string;
+  fs_name_no_ext?: string;
+  fs_size_bytes: number;
+  platform_id: number;
+  platform_slug: string;
+  platform_display_name?: string;
+  platform_custom_name?: string | null;
+  path_cover_small?: string | null;
+  path_cover_large?: string | null;
+  url_cover?: string | null;
+  merged_screenshots?: string[];
+  metadatum?: RomMetadata | null;
+  regions?: string[];
+  languages?: string[];
+  tags?: string[];
+  revision?: string | null;
+  has_multiple_files?: boolean;
+  missing_from_fs?: boolean;
+  rom_user?: RomUser | null;
+  files?: RomFile[];
+  user_saves?: unknown[];
+  user_states?: unknown[];
+}
+
+export interface RomPage {
+  items: Rom[];
+  // Null when the server skipped the count.
+  total: number | null;
+}
+
+export type CollectionKind = 'regular' | 'smart';
 
 export interface Collection {
   id: number;
   name: string;
-  description?: string;
-  is_public: boolean;
-  is_favorite: boolean;
-  url_cover?: string;
+  description?: string | null;
+  rom_ids?: number[];
   rom_count?: number;
-  roms?: number[];
-}
-
-export interface Save {
-  id: number;
-  rom_id: number;
-  emulator?: string;
-  slot?: number;
-  device_id?: string;
-  file_name: string;
-  file_size_bytes: number;
-  created_at: string;
-  updated_at: string;
+  path_cover_small?: string | null;
+  path_covers_small?: string[];
+  url_cover?: string | null;
+  is_public?: boolean;
+  is_favorite?: boolean;
+  is_smart?: boolean;
 }
 
 export interface HeartbeatResponse {
   SYSTEM: {
     VERSION: string;
-    SHOW_SETUP_WIZARD: boolean;
+    SHOW_SETUP_WIZARD?: boolean;
   };
-  METADATA_SOURCES: {
-    ANY_SOURCE_ENABLED: boolean;
-    IGDB_API_ENABLED: boolean;
-    MOBY_API_ENABLED: boolean;
-    STEAMGRIDDB_API_ENABLED: boolean;
-    SS_API_ENABLED: boolean;
-    RA_API_ENABLED: boolean;
+  EMULATION?: {
+    DISABLE_EMULATOR_JS?: boolean;
   };
-  FILESYSTEM: {
-    FS_PLATFORMS: string[];
+  FRONTEND?: {
+    DISABLE_USERPASS_LOGIN?: boolean;
+  };
+  OIDC?: {
+    ENABLED?: boolean;
+    PROVIDER?: string;
   };
 }
 
@@ -142,15 +152,36 @@ export interface StatsResponse {
   TOTAL_FILESIZE_BYTES: number;
 }
 
-export type GameStatus = 'INCOMPLETE' | 'FINISHED' | 'COMPLETED_100' | 'RETIRED' | 'NEVER_PLAYING' | null;
+export type TaskStatus =
+  | 'queued'
+  | 'started'
+  | 'finished'
+  | 'failed'
+  | 'deferred'
+  | 'scheduled'
+  | 'stopped'
+  | 'canceled';
+
+export interface TaskInfo {
+  task_id: string;
+  task_name: string;
+  status: TaskStatus;
+}
+
+export type RomGalleryParams = {
+  title: string;
+  platformId?: number;
+  collectionId?: number;
+  smartCollectionId?: number;
+};
 
 export type RootStackParamList = {
   ServerConfig: undefined;
   Login: undefined;
   Main: undefined;
-  RomDetail: { romId: number; platformSlug?: string };
-  RomGallery: { platformId: number; platformName: string; platformSlug: string };
-  Play: { romId: number; romName: string; romFsName: string; platformSlug: string; fileIds?: number[] };
+  RomDetail: { romId: number };
+  RomGallery: RomGalleryParams;
+  Play: { romId: number; fileId?: number };
   Upload: undefined;
 };
 

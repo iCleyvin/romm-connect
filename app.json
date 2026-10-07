@@ -2,7 +2,7 @@
   "expo": {
     "name": "RoMM Connect",
     "slug": "romm-connect",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -13,7 +13,13 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cleyvin.romm_connect"
+      "bundleIdentifier": "com.cleyvin.rommconnect",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,12 +29,12 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.cleyvin.romm_connect",
-      "versionCode": 6,
+      "versionCode": 7,
       "permissions": [
         "INTERNET",
         "CAMERA"
       ],
-      "usesCleartextTraffic": true
+      "allowBackup": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -59,7 +65,10 @@
         {
           "channel": "production"
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-image",
+      "expo-font"
     ]
   }
 }

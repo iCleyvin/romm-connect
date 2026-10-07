@@ -1,90 +1,51 @@
 // by Cleyvin
 
-import { getBaseUrl } from '../api/client';
-import { ServerConfig } from '../types';
+import { Platform, Rom } from '../types';
 
-export const formatFileSize = (bytes: number): string => {
-  if (bytes <= 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+export const formatFileSize = (bytes: number | null | undefined): string => {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${parseFloat((bytes / Math.pow(1024, index)).toFixed(1))} ${units[index]}`;
 };
 
-export const getCoverUrl = (
-  serverConfig: ServerConfig | null,
-  path?: string
-): string | undefined => {
-  if (!serverConfig || !path) return undefined;
-  const base = getBaseUrl(serverConfig);
-  if (path.startsWith('http')) return path;
-  // RoMM serves assets from /assets/ path, strip leading /assets/ if present
-  const cleanPath = path.startsWith('/assets/') ? path.slice(8) : path;
-  return `${base}/api/raw/assets/${cleanPath}`;
+export const formatCount = (count: number, singular: string): string =>
+  `${count.toLocaleString()} ${singular}${count === 1 ? '' : 's'}`;
+
+export const formatDate = (iso: string | null | undefined): string => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
 };
 
-export const getRomCoverUrl = (
-  serverConfig: ServerConfig | null,
-  rom: { path_cover_small?: string; path_cover_large?: string; url_cover?: string; path_cover_s?: string; path_cover_l?: string },
-  credentials?: { username: string; password: string }
-): string | undefined => {
-  // Priority 1: External URL (IGDB etc.) - no auth needed
-  if (rom.url_cover) return rom.url_cover;
+const RESOURCES_PATH = '/assets/romm/resources/';
 
-  // Priority 2: Local cover with Basic Auth embedded in URL
-  const localPath = rom.path_cover_small || rom.path_cover_large || rom.path_cover_s || rom.path_cover_l;
-  if (localPath && serverConfig) {
-    const protocol = serverConfig.useHttps ? 'https' : 'http';
-    const port = serverConfig.port ? `:${serverConfig.port}` : '';
-    let cleanPath = localPath.startsWith('/assets/') ? localPath.slice(8) : localPath;
-    const qsIndex = cleanPath.indexOf('?');
-    if (qsIndex > 0) cleanPath = cleanPath.substring(0, qsIndex);
-
-    if (credentials) {
-      return `${protocol}://${encodeURIComponent(credentials.username)}:${encodeURIComponent(credentials.password)}@${serverConfig.host}${port}/api/raw/assets/${encodeURI(cleanPath)}`;
-    }
-    return `${protocol}://${serverConfig.host}${port}/api/raw/assets/${encodeURI(cleanPath)}`;
-  }
-
-  return undefined;
+/**
+ * Absolute URL for a cover, screenshot or other library resource. RoMM serves
+ * these as static files (no auth) and returns server-relative paths; very old
+ * servers return them relative to the resources folder.
+ */
+export const resourceUrl = (serverUrl: string | null, path: string | null | undefined): string | undefined => {
+  if (!path) return undefined;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!serverUrl) return undefined;
+  const absolute = path.startsWith('/') ? path : `${RESOURCES_PATH}${path}`;
+  return `${serverUrl}${encodeURI(absolute)}`;
 };
 
-export const getAspectRatio = (ratio: string): number => {
-  const parts = ratio.split('/');
-  if (parts.length === 2) {
-    return parseInt(parts[0]) / parseInt(parts[1]);
-  }
-  return 2 / 3;
+export const romTitle = (rom: Pick<Rom, 'name' | 'fs_name' | 'fs_name_no_tags'>): string =>
+  rom.name || rom.fs_name_no_tags || rom.fs_name;
+
+export const romCoverUrl = (serverUrl: string | null, rom: Rom, size: 'small' | 'large' = 'small'): string | undefined => {
+  const local = size === 'large' ? rom.path_cover_large || rom.path_cover_small : rom.path_cover_small || rom.path_cover_large;
+  return resourceUrl(serverUrl, local) ?? (rom.url_cover || undefined);
 };
 
-export const getPlatformIcon = (slug: string): string => {
-  const iconMap: Record<string, string> = {
-    'n64': 'gamepad-variant',
-    'snes': 'gamepad-square',
-    'nes': 'gamepad',
-    'gb': 'gamepad-round',
-    'gba': 'gamepad-round',
-    'gbc': 'gamepad-round',
-    'nds': 'nintendo-switch',
-    'psx': 'sony-playstation',
-    'ps2': 'sony-playstation',
-    'psp': 'sony-playstation',
-    'genesis': 'controller-classic',
-    'megadrive': 'controller-classic',
-    'dreamcast': 'controller-classic',
-    'saturn': 'controller-classic',
-    'arcade': 'pac-man',
-    'mame': 'pac-man',
-    'atari2600': 'space-invaders',
-    '3ds': 'nintendo-switch',
-    'wii': 'nintendo-wii-remote',
-    'gamecube': 'gamepad-variant',
-    'switch': 'nintendo-switch',
-  };
-  return iconMap[slug] || 'gamepad-variant-outline';
-};
+export const platformName = (platform: Pick<Platform, 'name' | 'custom_name' | 'display_name'>): string =>
+  platform.custom_name || platform.display_name || platform.name;
 
-export const truncateText = (text: string, maxLength: number): string => {
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength - 3) + '...';
+/** Name the ROM download is saved under; multi-file ROMs arrive as a zip. */
+export const romDownloadName = (rom: Rom): string => {
+  const isBundle = (rom.files?.length ?? 0) > 1 || rom.has_multiple_files;
+  return isBundle && !/\.zip$/i.test(rom.fs_name) ? `${rom.fs_name}.zip` : rom.fs_name;
 };

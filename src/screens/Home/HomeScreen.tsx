@@ -1,324 +1,335 @@
 // by Cleyvin
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   RefreshControl,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Linking,
-  TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../../store/AppContext';
-import { getStats, getPlatforms, getRoms, scanAllPlatforms, searchRoms } from '../../api';
-import { StatsResponse, Platform, Rom, RootStackParamList } from '../../types';
-import { formatFileSize } from '../../utils';
-import { spacing, borderRadius, fontSize } from '../../theme';
-import LoadingScreen from '../../components/common/LoadingScreen';
+import { describeError, getPlatforms, getRoms, getStats, httpStatus, startScan, waitForTask } from '../../api';
+import { queryKeys } from '../../api/queryClient';
+import { LINKS, SCOPES } from '../../constants';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useRefetchOnFocus } from '../../hooks/useRefetchOnFocus';
+import { Rom, RootStackParamList } from '../../types';
+import { formatFileSize, platformName } from '../../utils';
+import { spacing, borderRadius, fontSize, IconName, ThemeColors } from '../../theme';
 import RomCard from '../../components/cards/RomCard';
+import PlatformIcon from '../../components/common/PlatformIcon';
+import SearchBar from '../../components/common/SearchBar';
+import RomGrid from '../../components/common/RomGrid';
+import EmptyState from '../../components/common/EmptyState';
+import ErrorState from '../../components/common/ErrorState';
+import LoadingScreen from '../../components/common/LoadingScreen';
+
+type ScanState = { phase: 'running' | 'done' | 'failed'; message: string } | null;
+
+const SHELF_CARD_WIDTH = 112;
 
 const HomeScreen = () => {
-  const { colors, user } = useApp();
+  const { colors, user, can } = useApp();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [recentlyPlayed, setRecentlyPlayed] = useState<Rom[]>([]);
-  const [recentRoms, setRecentRoms] = useState<Rom[]>([]);
-  const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Rom[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const searchTerm = useDebouncedValue(search.trim());
+  const [scan, setScan] = useState<ScanState>(null);
+  const unmounted = useRef(false);
 
-  const fetchData = async () => {
-    try {
-      const [statsData, platformsData, recentData] = await Promise.all([
-        getStats(),
-        getPlatforms(),
-        getRoms({ limit: 12, order_by: 'updated_at', order_dir: 'desc' }),
-      ]);
-      setStats(statsData);
-      setPlatforms(platformsData);
-      setRecentRoms(recentData.items || []);
-      // Separate call for recently played (may not be supported in all versions)
-      try {
-        const playedData = await getRoms({ limit: 6, order_by: 'last_played', order_dir: 'desc' });
-        const played = (playedData.items || []).filter(
-          (r: Rom) => r.rom_user?.last_played
-        );
-        setRecentlyPlayed(played);
-      } catch {
-        // last_played ordering not supported, skip
-      }
-    } catch (err) {
-      console.error('Failed to fetch home data:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchData();
-    }, [])
+  useEffect(
+    () => () => {
+      unmounted.current = true;
+    },
+    [],
   );
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-  };
+  const stats = useQuery({ queryKey: queryKeys.stats, queryFn: getStats });
+  const platforms = useQuery({ queryKey: queryKeys.platforms, queryFn: getPlatforms });
+  const recentlyPlayed = useQuery({
+    queryKey: queryKeys.roms({ shelf: 'played' }),
+    queryFn: () => getRoms({ played: true, orderBy: 'last_played', orderDir: 'desc', limit: 12 }),
+    select: (page) => page.items.filter((rom) => rom.rom_user?.last_played),
+  });
+  const recentlyAdded = useQuery({
+    queryKey: queryKeys.roms({ shelf: 'added' }),
+    queryFn: () => getRoms({ orderBy: 'id', orderDir: 'desc', limit: 12 }),
+    select: (page) => page.items,
+  });
+  const results = useQuery({
+    queryKey: queryKeys.roms({ searchTerm }),
+    queryFn: () => getRoms({ searchTerm, limit: 48 }),
+    enabled: searchTerm.length > 0,
+    select: (page) => page.items,
+  });
 
-  // Global search with debounce
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    setSearching(true);
-    const timer = setTimeout(async () => {
-      try {
-        const results = await searchRoms(searchQuery.trim());
-        setSearchResults(results);
-      } catch { setSearchResults([]); }
-      setSearching(false);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const refreshAll = useCallback(() => {
+    stats.refetch();
+    platforms.refetch();
+    recentlyPlayed.refetch();
+    recentlyAdded.refetch();
+  }, [stats.refetch, platforms.refetch, recentlyPlayed.refetch, recentlyAdded.refetch]);
+  useRefetchOnFocus(refreshAll);
 
-  const [scanStatus, setScanStatus] = useState('');
+  const openRom = useCallback((rom: Rom) => navigation.navigate('RomDetail', { romId: rom.id }), [navigation]);
 
   const handleScan = async () => {
-    setScanning(true);
+    setScan({ phase: 'running', message: 'Scanning library…' });
     try {
-      // Step 1: Scan server
-      setScanStatus('Scanning server...');
-      const result = await scanAllPlatforms();
-
-      // Step 2: Refresh app data
-      setScanStatus('Updating app...');
-      await fetchData();
-
-      setScanStatus('');
-      Alert.alert(
-        'Scan Complete',
-        `${result.scanned} platforms scanned.${result.errors.length > 0 ? `\n\nErrors:\n${result.errors.join('\n')}` : '\nLibrary updated!'}`,
+      const task = await startScan();
+      const ok = task ? await waitForTask(task.task_id, () => unmounted.current) : true;
+      if (unmounted.current) return;
+      await queryClient.invalidateQueries();
+      setScan(
+        ok
+          ? { phase: 'done', message: task ? 'Library scan finished' : 'Library scan started on the server' }
+          : { phase: 'failed', message: 'The scan did not finish. Check the server logs.' },
       );
-    } catch (err: any) {
-      setScanStatus('');
-      Alert.alert('Scan Error', err.message || 'Could not scan library');
-    } finally {
-      setScanning(false);
-      setScanStatus('');
+    } catch (err) {
+      if (unmounted.current) return;
+      const message =
+        httpStatus(err) === 409 ? 'A scan is already running on the server' : describeError(err, 'Could not start the scan');
+      setScan({ phase: 'failed', message });
     }
   };
 
-  if (loading) return <LoadingScreen message="Loading dashboard..." />;
+  const searching = search.trim().length > 0;
+  const refreshing =
+    stats.isRefetching || platforms.isRefetching || recentlyPlayed.isRefetching || recentlyAdded.isRefetching;
+  const loadFailed = stats.isError && platforms.isError && recentlyAdded.isError;
+  const firstLoad = stats.isPending && platforms.isPending && recentlyAdded.isPending;
+  const topPlatforms = [...(platforms.data ?? [])].sort((a, b) => b.rom_count - a.rom_count).slice(0, 12);
+  const libraryEmpty = !!stats.data && stats.data.ROMS === 0;
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 24 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-    >
-      {/* Greeting */}
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 12 }]}>
       <View style={styles.greeting}>
-        <View>
+        <View style={styles.greetingTextWrap}>
           <Text style={[styles.greetingText, { color: colors.textSecondary }]}>Welcome back,</Text>
-          <Text style={[styles.userName, { color: colors.text }]}>{user?.username || 'Player'}</Text>
+          <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>
+            {user?.username || 'Player'}
+          </Text>
         </View>
-        <View style={styles.headerActions}>
-          {/* Scan Button */}
-          <TouchableOpacity
+        {can(SCOPES.TASKS_RUN) && (
+          <HeaderButton
+            colors={colors}
+            icon="magnify-scan"
+            label="Scan library"
+            busy={scan?.phase === 'running'}
             onPress={handleScan}
-            disabled={scanning}
-            style={[styles.headerButton, { backgroundColor: colors.topLayer }]}
-          >
-            {scanning ? (
-              <ActivityIndicator size={18} color={colors.primary} />
-            ) : (
-              <MaterialCommunityIcons name="magnify-scan" size={22} color={colors.primary} />
-            )}
-          </TouchableOpacity>
-          {/* Upload Button */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Upload')}
-            style={[styles.headerButton, { backgroundColor: colors.topLayer }]}
-          >
-            <MaterialCommunityIcons name="upload" size={22} color={colors.accent} />
-          </TouchableOpacity>
-          {/* Avatar */}
-          <View style={[styles.avatarCircle, { backgroundColor: colors.primary + '30' }]}>
-            <MaterialCommunityIcons name="account" size={24} color={colors.primary} />
-          </View>
-        </View>
-      </View>
-
-      {/* Global Search */}
-      <View style={[styles.searchBar, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
-        <MaterialCommunityIcons name="magnify" size={20} color={colors.textSecondary} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search all ROMs..."
-          placeholderTextColor={colors.placeholder}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <MaterialCommunityIcons name="close-circle" size={18} color={colors.gray} />
-          </TouchableOpacity>
+          />
+        )}
+        {can(SCOPES.ROMS_WRITE) && (
+          <HeaderButton colors={colors} icon="upload" label="Upload ROM" onPress={() => navigation.navigate('Upload')} />
         )}
       </View>
 
-      {/* Search Results */}
-      {searchQuery.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="magnify" size={20} color={colors.primary} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {searching ? 'Searching...' : `Results (${searchResults.length})`}
-            </Text>
-          </View>
-          {searchResults.length > 0 ? (
-            <View style={styles.romGrid}>
-              {searchResults.map((rom) => (
-                <RomCard key={rom.id} rom={rom} onPress={() => navigation.navigate('RomDetail', { romId: rom.id })} />
-              ))}
-            </View>
-          ) : !searching ? (
-            <Text style={[styles.noResults, { color: colors.gray }]}>No ROMs found</Text>
-          ) : null}
+      <SearchBar value={search} onChangeText={setSearch} placeholder="Search all ROMs" />
+
+      {scan && (
+        <View style={[styles.scanBanner, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+          {scan.phase === 'running' ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <MaterialCommunityIcons
+              name={scan.phase === 'done' ? 'check-circle' : 'alert-circle'}
+              size={18}
+              color={scan.phase === 'done' ? colors.success : colors.error}
+            />
+          )}
+          <Text style={[styles.scanText, { color: colors.text }]}>{scan.message}</Text>
+          {scan.phase !== 'running' && (
+            <TouchableOpacity onPress={() => setScan(null)} hitSlop={12} accessibilityLabel="Dismiss">
+              <MaterialCommunityIcons name="close" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
-      {/* Scan Status */}
-      {scanStatus ? (
-        <View style={styles.scanStatus}>
-          <ActivityIndicator size="small" color={colors.primary} />
-          <Text style={[styles.scanStatusText, { color: colors.primary }]}>{scanStatus}</Text>
-        </View>
-      ) : null}
-
-      {/* Stats Cards */}
-      {stats && (
-        <View style={styles.statsGrid}>
-          <StatCard colors={colors} icon="gamepad-variant" label="Platforms" value={(stats.PLATFORMS ?? 0).toString()} color={colors.primary} />
-          <StatCard colors={colors} icon="disc" label="ROMs" value={(stats.ROMS ?? 0).toString()} color={colors.accent} />
-          <StatCard colors={colors} icon="content-save" label="Saves" value={((stats.SAVES ?? 0) + (stats.STATES ?? 0)).toString()} color={colors.success} />
-          <StatCard colors={colors} icon="harddisk" label="Total Size" value={formatFileSize(stats.TOTAL_FILESIZE_BYTES ?? 0)} color={colors.info} />
-        </View>
-      )}
-
-      {/* Recently Played (BEFORE Recently Updated) */}
-      {recentlyPlayed.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="history" size={20} color={colors.accent} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Played</Text>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
-            {recentlyPlayed.map((rom) => (
-              <View key={rom.id} style={styles.horizontalCard}>
-                <RomCard
-                  rom={rom}
-                  onPress={() => navigation.navigate('RomDetail', { romId: rom.id })}
-                />
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Recently Updated */}
-      {recentRoms.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="update" size={20} color={colors.primary} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Updated</Text>
-          </View>
-          <View style={styles.romGrid}>
-            {recentRoms.map((rom) => (
-              <RomCard
-                key={rom.id}
-                rom={rom}
-                onPress={() => navigation.navigate('RomDetail', { romId: rom.id })}
-              />
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Quick Platform Access */}
-      {platforms.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="gamepad-variant" size={20} color={colors.secondary} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Platforms</Text>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.platformScroll}>
-            {platforms.slice(0, 10).map((platform) => (
-              <TouchableOpacity
-                key={platform.id}
-                onPress={() =>
-                  navigation.navigate('RomGallery', {
-                    platformId: platform.id,
-                    platformName: platform.custom_name || platform.name,
-                    platformSlug: platform.slug,
-                  })
-                }
-                style={[styles.platformChip, { backgroundColor: colors.topLayer, borderColor: colors.border }]}
-              >
-                <MaterialCommunityIcons name="gamepad-variant" size={16} color={colors.primary} />
-                <Text style={[styles.platformChipText, { color: colors.text }]} numberOfLines={1}>
-                  {platform.custom_name || platform.name}
-                </Text>
-                <Text style={[styles.platformChipCount, { color: colors.textSecondary }]}>
-                  {platform.rom_count}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Donation Card */}
-      <View style={[styles.donationCard, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
-        <MaterialCommunityIcons name="heart" size={28} color={colors.accent} />
-        <Text style={[styles.donationTitle, { color: colors.text }]}>Support RoMM Connect</Text>
-        <Text style={[styles.donationText, { color: colors.textSecondary }]}>
-          This app is free and open source. If you enjoy it, consider buying the developer a coffee!
-        </Text>
-        <TouchableOpacity
-          style={[styles.donationButton, { backgroundColor: colors.accent }]}
-          onPress={() => {
-            Linking.openURL('https://www.paypal.com/donate/?hosted_button_id=&business=cleyvinos@gmail.com&currency_code=USD');
-          }}
+      {searching ? (
+        results.isError ? (
+          <ErrorState error={results.error} onRetry={() => results.refetch()} />
+        ) : !results.data || searchTerm !== search.trim() ? (
+          <LoadingScreen />
+        ) : (
+          <RomGrid
+            roms={results.data}
+            empty={<EmptyState icon="magnify-close" title="No matches" subtitle={`No ROM matches “${searchTerm}”.`} />}
+          />
+        )
+      ) : firstLoad ? (
+        <LoadingScreen />
+      ) : loadFailed ? (
+        <ErrorState error={stats.error} onRetry={refreshAll} />
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={colors.primary} colors={[colors.primary]} />
+          }
         >
-          <MaterialCommunityIcons name="hand-heart" size={18} color="#fff" />
-          <Text style={styles.donationButtonText}>Donate via PayPal</Text>
-        </TouchableOpacity>
-        <Text style={[styles.donationFooter, { color: colors.gray }]}>by Cleyvin @ 2026</Text>
-      </View>
-    </ScrollView>
+          {stats.data && (
+            <View style={styles.statsGrid}>
+              <StatCard colors={colors} icon="gamepad-variant" label="Platforms" value={String(stats.data.PLATFORMS ?? 0)} tint={colors.primary} />
+              <StatCard colors={colors} icon="disc" label="ROMs" value={(stats.data.ROMS ?? 0).toLocaleString()} tint={colors.accent} />
+              <StatCard
+                colors={colors}
+                icon="content-save"
+                label="Saves & states"
+                value={String((stats.data.SAVES ?? 0) + (stats.data.STATES ?? 0))}
+                tint={colors.success}
+              />
+              <StatCard colors={colors} icon="harddisk" label="Library size" value={formatFileSize(stats.data.TOTAL_FILESIZE_BYTES)} tint={colors.info} />
+            </View>
+          )}
+
+          {libraryEmpty && (
+            <EmptyState
+              icon="disc-alert"
+              title="Your library is empty"
+              subtitle="Add ROMs to your server, then scan the library to see them here."
+            />
+          )}
+
+          <Shelf colors={colors} icon="history" title="Continue playing" roms={recentlyPlayed.data} onPress={openRom} />
+          <Shelf colors={colors} icon="new-box" title="Recently added" roms={recentlyAdded.data} onPress={openRom} />
+
+          {topPlatforms.length > 0 && (
+            <View style={styles.section}>
+              <SectionTitle colors={colors} icon="gamepad-variant" title="Platforms" />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelfContent}>
+                {topPlatforms.map((platform) => (
+                  <TouchableOpacity
+                    key={platform.id}
+                    onPress={() => navigation.navigate('RomGallery', { title: platformName(platform), platformId: platform.id })}
+                    style={[styles.platformChip, { backgroundColor: colors.topLayer, borderColor: colors.border }]}
+                  >
+                    <PlatformIcon platform={platform} size={20} />
+                    <Text style={[styles.platformChipText, { color: colors.text }]} numberOfLines={1}>
+                      {platformName(platform)}
+                    </Text>
+                    <Text style={[styles.platformChipCount, { color: colors.textSecondary }]}>{platform.rom_count}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          <View style={[styles.donationCard, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
+            <MaterialCommunityIcons name="heart" size={24} color={colors.accent} />
+            <View style={styles.donationBody}>
+              <Text style={[styles.donationTitle, { color: colors.text }]}>Enjoying RoMM Connect?</Text>
+              <Text style={[styles.donationText, { color: colors.textSecondary }]}>
+                It is free and open source. A donation keeps it going.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.donationButton, { backgroundColor: colors.accent }]}
+              onPress={() => Linking.openURL(LINKS.DONATE)}
+            >
+              <Text style={styles.donationButtonText}>Donate</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      )}
+    </View>
   );
 };
 
-const StatCard = ({ colors, icon, label, value, color }: { colors: any; icon: string; label: string; value: string; color: string }) => (
+const HeaderButton = ({
+  colors,
+  icon,
+  label,
+  busy,
+  onPress,
+}: {
+  colors: ThemeColors;
+  icon: IconName;
+  label: string;
+  busy?: boolean;
+  onPress: () => void;
+}) => (
+  <TouchableOpacity
+    onPress={onPress}
+    disabled={busy}
+    style={[styles.headerButton, { backgroundColor: colors.topLayer }]}
+    accessibilityRole="button"
+    accessibilityLabel={label}
+  >
+    {busy ? <ActivityIndicator size="small" color={colors.primary} /> : <MaterialCommunityIcons name={icon} size={22} color={colors.primary} />}
+  </TouchableOpacity>
+);
+
+const SectionTitle = ({ colors, icon, title }: { colors: ThemeColors; icon: IconName; title: string }) => (
+  <View style={styles.sectionHeader}>
+    <MaterialCommunityIcons name={icon} size={20} color={colors.primary} />
+    <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+  </View>
+);
+
+const Shelf = ({
+  colors,
+  icon,
+  title,
+  roms,
+  onPress,
+}: {
+  colors: ThemeColors;
+  icon: IconName;
+  title: string;
+  roms: Rom[] | undefined;
+  onPress: (rom: Rom) => void;
+}) => {
+  if (!roms?.length) return null;
+  return (
+    <View style={styles.section}>
+      <SectionTitle colors={colors} icon={icon} title={title} />
+      <FlatList
+        horizontal
+        data={roms}
+        keyExtractor={(item) => String(item.id)}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.shelfContent}
+        renderItem={({ item }) => <RomCard rom={item} width={SHELF_CARD_WIDTH} onPress={onPress} />}
+      />
+    </View>
+  );
+};
+
+const StatCard = ({
+  colors,
+  icon,
+  label,
+  value,
+  tint,
+}: {
+  colors: ThemeColors;
+  icon: IconName;
+  label: string;
+  value: string;
+  tint: string;
+}) => (
   <View style={[styles.statCard, { backgroundColor: colors.topLayer, borderColor: colors.border }]}>
-    <MaterialCommunityIcons name={icon as any} size={24} color={color} />
-    <Text style={[styles.statValue, { color: colors.text }]}>{value}</Text>
-    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
+    <MaterialCommunityIcons name={icon} size={22} color={tint} />
+    <View style={styles.statBody}>
+      <Text style={[styles.statValue, { color: colors.text }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={[styles.statLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
   </View>
 );
 
@@ -327,153 +338,91 @@ const styles = StyleSheet.create({
   greeting: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  greetingText: { fontSize: fontSize.md },
-  userName: { fontSize: fontSize.xxl, fontWeight: '700' },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
+  greetingTextWrap: { flex: 1 },
+  greetingText: { fontSize: fontSize.md },
+  userName: { fontSize: fontSize.xxl, fontWeight: '700' },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchBar: {
+  scanBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     marginHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    paddingHorizontal: 12,
-    height: 44,
+    marginBottom: spacing.sm,
+    padding: 12,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
   },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: fontSize.md,
-  },
-  noResults: {
-    textAlign: 'center',
-    paddingVertical: spacing.lg,
-    fontSize: fontSize.md,
-  },
-  scanStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  scanStatusText: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
+  scanText: { flex: 1, fontSize: fontSize.md },
+  scrollContent: { paddingBottom: spacing.lg, flexGrow: 1 },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: spacing.sm,
-    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
   statCard: {
-    width: '46%',
-    margin: '2%',
-    padding: spacing.md,
+    flexGrow: 1,
+    flexBasis: '45%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    alignItems: 'center',
   },
-  statValue: { fontSize: fontSize.xl, fontWeight: '700', marginTop: spacing.xs },
-  statLabel: { fontSize: fontSize.sm, marginTop: 2 },
-  section: { marginTop: spacing.md },
+  statBody: { flex: 1 },
+  statValue: { fontSize: fontSize.xl, fontWeight: '700' },
+  statLabel: { fontSize: fontSize.sm, marginTop: 1 },
+  section: { marginTop: spacing.lg },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     paddingHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
-  sectionTitle: {
-    fontSize: fontSize.xl,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  horizontalList: {
-    paddingHorizontal: spacing.sm,
-  },
-  horizontalCard: {
-    width: 120,
-  },
-  romGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: spacing.sm,
-  },
-  platformScroll: { paddingLeft: spacing.md },
+  sectionTitle: { fontSize: fontSize.xl, fontWeight: '700' },
+  shelfContent: { paddingHorizontal: spacing.md, gap: spacing.sm },
   platformChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    marginRight: spacing.sm,
   },
-  platformChipText: { fontSize: fontSize.sm, fontWeight: '600', marginLeft: 6, maxWidth: 100 },
-  platformChipCount: { fontSize: fontSize.xs, marginLeft: 6 },
+  platformChipText: { fontSize: fontSize.sm, fontWeight: '600', maxWidth: 130 },
+  platformChipCount: { fontSize: fontSize.sm },
   donationCard: {
-    margin: spacing.md,
-    marginTop: spacing.xl,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  donationTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-    marginTop: spacing.sm,
-  },
-  donationText: {
-    fontSize: fontSize.sm,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    lineHeight: 20,
-  },
-  donationButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    gap: 12,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xl,
+    padding: spacing.md,
     borderRadius: borderRadius.lg,
-    marginTop: spacing.md,
+    borderWidth: 1,
   },
-  donationButtonText: {
-    color: '#fff',
-    fontSize: fontSize.md,
-    fontWeight: '700',
-    marginLeft: 8,
+  donationBody: { flex: 1 },
+  donationTitle: { fontSize: fontSize.md, fontWeight: '700' },
+  donationText: { fontSize: fontSize.sm, marginTop: 2, lineHeight: 17 },
+  donationButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: borderRadius.lg,
   },
-  donationFooter: {
-    fontSize: fontSize.xs,
-    marginTop: spacing.sm,
-  },
+  donationButtonText: { color: '#fff', fontSize: fontSize.md, fontWeight: '700' },
 });
 
 export default HomeScreen;

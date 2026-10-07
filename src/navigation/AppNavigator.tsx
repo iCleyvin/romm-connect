@@ -1,15 +1,12 @@
 // by Cleyvin
 
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import React, { useMemo } from 'react';
+import { NavigationContainer, DarkTheme, DefaultTheme, Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { StatusBar } from 'expo-status-bar';
 import { useApp } from '../store/AppContext';
-import { createApiClient, getCurrentUser, loginWithApiToken } from '../api';
-import { loadApiToken } from '../hooks/useAuthHeaders';
-import { STORAGE_KEYS } from '../constants';
 import { RootStackParamList } from '../types';
+import LoadingScreen from '../components/common/LoadingScreen';
 
 import ServerConfigScreen from '../screens/ServerConfig/ServerConfigScreen';
 import LoginScreen from '../screens/Login/LoginScreen';
@@ -22,93 +19,53 @@ import UploadScreen from '../screens/Upload/UploadScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
-  const { colors, serverConfig, setUser, isReady } = useApp();
-  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList | null>(null);
+  const { colors, theme, status } = useApp();
 
-  const navTheme = {
-    ...DefaultTheme,
-    dark: true,
-    colors: {
-      ...DefaultTheme.colors,
-      primary: colors.primary,
-      background: colors.background,
-      card: colors.surface,
-      text: colors.text,
-      border: colors.border,
-      notification: colors.accent,
-    },
-  };
-
-  useEffect(() => {
-    const bootstrap = async () => {
-      if (!isReady) return;
-
-      const storedConfig = await AsyncStorage.getItem(STORAGE_KEYS.SERVER_CONFIG);
-      if (!storedConfig) {
-        setInitialRoute('ServerConfig');
-        return;
-      }
-
-      const config = JSON.parse(storedConfig);
-      try {
-        createApiClient(config);
-        const storedMethod = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_METHOD);
-        const storedApiToken = await loadApiToken();
-        const storedTokens = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-
-        if (storedMethod === 'token' && storedApiToken) {
-          await loginWithApiToken(storedApiToken);
-          const userData = await getCurrentUser();
-          setUser(userData);
-          setInitialRoute('Main');
-        } else if (storedTokens) {
-          const userData = await getCurrentUser();
-          setUser(userData);
-          setInitialRoute('Main');
-        } else {
-          setInitialRoute('Login');
-        }
-      } catch {
-        setInitialRoute('Login');
-      }
+  const navTheme = useMemo<Theme>(() => {
+    const base = theme === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.accent,
+      },
     };
+  }, [theme, colors]);
 
-    bootstrap();
-  }, [isReady]);
-
-  if (!initialRoute) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  if (status === 'loading') return <LoadingScreen />;
 
   return (
     <NavigationContainer theme={navTheme}>
+      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       <Stack.Navigator
-        initialRouteName={initialRoute}
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
           animation: 'slide_from_right',
         }}
       >
-        <Stack.Screen name="ServerConfig" component={ServerConfigScreen} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Main" component={MainTabs} />
-        <Stack.Screen
-          name="RomDetail"
-          component={RomDetailScreen}
-          options={{ animation: 'slide_from_bottom' }}
-        />
-        <Stack.Screen name="RomGallery" component={RomGalleryScreen} />
-        <Stack.Screen
-          name="Play"
-          component={PlayScreen}
-          options={{ animation: 'slide_from_bottom', orientation: 'all' }}
-        />
-        <Stack.Screen name="Upload" component={UploadScreen} />
+        {/* Which screens exist follows the auth state, so signing in or out
+            swaps the stack instead of each screen resetting navigation. */}
+        {status === 'needs-server' && <Stack.Screen name="ServerConfig" component={ServerConfigScreen} />}
+        {status === 'signed-out' && <Stack.Screen name="Login" component={LoginScreen} />}
+        {status === 'signed-in' && (
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="RomGallery" component={RomGalleryScreen} />
+            <Stack.Screen name="RomDetail" component={RomDetailScreen} />
+            <Stack.Screen
+              name="Play"
+              component={PlayScreen}
+              options={{ animation: 'fade', orientation: 'all', gestureEnabled: false }}
+            />
+            <Stack.Screen name="Upload" component={UploadScreen} />
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

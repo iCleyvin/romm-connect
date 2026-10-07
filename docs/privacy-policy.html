@@ -11,64 +11,73 @@ h2 { color: #553E98; margin-top: 30px; }
 .date { color: #666; font-style: italic; }
 ul { padding-left: 20px; }
 li { margin-bottom: 8px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+th { background: #f5f3ff; }
 .contact { background: #f5f3ff; padding: 15px; border-radius: 8px; margin-top: 20px; }
 </style>
 </head>
 <body>
 <h1>RoMM Connect - Privacy Policy</h1>
-<p class="date">Last updated: April 15, 2026</p>
+<p class="date">Last updated: October 6, 2026</p>
 
-<h2>1. Overview</h2>
-<p>RoMM Connect ("the App") is a free, open-source mobile client for RoMM (ROM Manager) servers. This privacy policy explains how we handle your data.</p>
+<h2>1. Summary</h2>
+<p>RoMM Connect ("the App") is a free, open-source, unofficial mobile client for self-hosted RoMM servers. The App has no accounts of its own, no analytics and no advertising. Your library, saves and account live on <strong>your</strong> RoMM server. The only information that reaches the developer is the technical data of the update check described in section 4.</p>
 
-<h2>2. Data We Collect</h2>
-<p>The App collects and stores the following data <strong>locally on your device only</strong>:</p>
+<h2>2. What the App stores on your device</h2>
 <ul>
-<li><strong>Server configuration:</strong> IP address and port of your RoMM server</li>
-<li><strong>Authentication tokens:</strong> OAuth2 access and refresh tokens for API communication</li>
-<li><strong>User credentials:</strong> Username and password stored securely using the platform's Keystore (Android) / Keychain (iOS) via expo-secure-store. Credentials are encrypted at rest and never stored in plaintext.</li>
-<li><strong>Theme preference:</strong> Dark or light mode selection</li>
+<li><strong>Server address</strong> of your RoMM server.</li>
+<li><strong>Session tokens</strong> (OAuth access and refresh tokens, or the API token you provide), kept in the system's encrypted storage (Android Keystore / iOS Keychain).</li>
+<li><strong>Your RoMM profile as returned by your server</strong> (username, role and e-mail address, if your account has one), cached so the App can open without a network round trip.</li>
+<li><strong>Theme preference.</strong></li>
+<li><strong>Caches:</strong> cover images, and the game files and emulator settings that the built-in emulator keeps so a game starts faster next time.</li>
+</ul>
+<p><strong>Your password is never stored.</strong> It is sent once to your server to sign in and then discarded. Versions up to 0.5.0 kept it in encrypted storage; updating removes it.</p>
+<p>App data is excluded from device backups.</p>
+
+<h2>3. Permissions</h2>
+<ul>
+<li><strong>Camera:</strong> used only while you scan a pairing QR code. Images are processed on the device and are not saved or transmitted.</li>
+<li><strong>Files:</strong> the App reads only the files you pick to upload, and writes only to the folder you choose when you download a ROM.</li>
+<li><strong>Network:</strong> required to reach your server.</li>
 </ul>
 
-<h2>3. Data We Do NOT Collect</h2>
+<h2>4. Who the App talks to</h2>
+<table>
+<tr><th>Destination</th><th>When</th><th>What is sent</th></tr>
+<tr><td>Your RoMM server</td><td>Always</td><td>Your credentials when you sign in, your session token, and everything you do in your library (browsing, play activity, ratings, saves, states, uploads).</td></tr>
+<tr><td>Update server (<code>updates.kcomer.app</code>, operated by the developer)</td><td>When the App starts</td><td>Platform, app version, update channel, the identifier of the installed update bundle, and a rollout group number. On Android that number is derived on the device from the Android ID; the Android ID itself is not sent. As with any internet service, the server sees your IP address. No server address, account, or library data is sent.</td></tr>
+<tr><td>EmulatorJS CDN (<code>cdn.emulatorjs.org</code>)</td><td>Only when your RoMM server does not ship its own copy of EmulatorJS</td><td>A standard request for the emulator files. The CDN sees your IP address. No account or library data is sent.</td></tr>
+<tr><td>Image hosts referenced by your server (for example IGDB)</td><td>When a game has no cover stored on your server</td><td>A standard image request. The host sees your IP address.</td></tr>
+<tr><td>PayPal, GitHub</td><td>Only if you tap the donate or source-code links</td><td>Nothing from the App; the link opens in your browser.</td></tr>
+</table>
+
+<h2>5. What the developer does not do</h2>
 <ul>
-<li>We do not collect analytics or usage data</li>
-<li>We do not use tracking pixels or third-party analytics SDKs</li>
-<li>We do not collect device identifiers</li>
-<li>We do not share any data with third parties</li>
-<li>We do not serve advertisements</li>
+<li>No analytics, crash reporting, advertising or tracking SDKs.</li>
+<li>No access to your RoMM server, your credentials or your library.</li>
+<li>No selling or sharing of data with third parties.</li>
 </ul>
 
-<h2>4. Server Communication</h2>
-<p>The App communicates exclusively with <strong>your self-hosted RoMM server</strong>. All data (ROMs, saves, states, metadata) is stored on your server, not on our systems. We have no access to your server or its data.</p>
+<h2>6. Security</h2>
+<p>Session tokens are stored in platform-encrypted storage. The App allows plain HTTP connections because many self-hosted servers run on a private network without a certificate. Over HTTP, your password and token travel unencrypted and can be read by anyone on the same network, so the App shows a warning before you sign in. Use HTTPS whenever your server is reachable from outside your home network.</p>
 
-<h2>5. Third-Party Services</h2>
+<h2>7. Deleting your data</h2>
 <ul>
-<li><strong>EmulatorJS (cdn.emulatorjs.org):</strong> The emulation engine is loaded from a public CDN. No user data is sent to this service.</li>
-<li><strong>IGDB (images.igdb.com):</strong> Game cover images may be loaded from IGDB's CDN. No user data is sent.</li>
-<li><strong>PayPal:</strong> If you choose to donate, you will be redirected to PayPal's website. We do not process payments directly.</li>
+<li><strong>Sign out</strong> (Settings) removes the session tokens and cached profile.</li>
+<li><strong>Change server</strong> (Settings) also removes the server address.</li>
+<li><strong>Uninstalling</strong> the App removes everything it stored on the device.</li>
 </ul>
+<p>Data on your RoMM server (saves, states, play history, API tokens) is managed from RoMM itself. To revoke an API token used by the App, delete it in your RoMM profile.</p>
 
-<h2>6. Data Storage & Security</h2>
-<p>User credentials (username and password) are stored using platform-level encrypted storage (Android Keystore / iOS Keychain) via expo-secure-store. Other app data (server config, auth tokens, theme preference) is stored in standard local device storage. Authentication tokens are used to communicate with your RoMM server over your local network or VPN.</p>
-<p>The app allows connections to servers over HTTP (unencrypted) to support self-hosted servers on private local networks. We recommend using HTTPS when your server is accessible over the internet or a VPN.</p>
+<h2>8. Children</h2>
+<p>The App is not directed at children under 13 and does not knowingly collect data from them.</p>
 
-<h2>7. Data Deletion</h2>
-<p>You can delete all app data at any time by:</p>
-<ul>
-<li>Using the "Sign Out" option in Settings (clears tokens and user data)</li>
-<li>Using the "Change Server" option (clears all connection data)</li>
-<li>Uninstalling the App (removes all locally stored data)</li>
-</ul>
+<h2>9. Changes</h2>
+<p>Changes to this policy are published on this page with a new date.</p>
 
-<h2>8. Children's Privacy</h2>
-<p>The App is not directed at children under 13. We do not knowingly collect data from children.</p>
-
-<h2>9. Changes to This Policy</h2>
-<p>We may update this privacy policy from time to time. Changes will be posted on this page with an updated date.</p>
-
-<h2>10. Open Source</h2>
-<p>RoMM Connect is open source. You can review the complete source code at <a href="https://github.com/iCleyvin/romm-connect">github.com/iCleyvin/romm-connect</a>.</p>
+<h2>10. Open source</h2>
+<p>Everything described here can be verified in the source code at <a href="https://github.com/iCleyvin/romm-connect">github.com/iCleyvin/romm-connect</a>. See also the <a href="terms.html">Terms of Use</a>.</p>
 
 <div class="contact">
 <h2>Contact</h2>

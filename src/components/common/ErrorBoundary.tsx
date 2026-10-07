@@ -36,7 +36,7 @@ class ErrorBoundary extends Component<Props, State> {
           <Text style={styles.message}>{this.state.error}</Text>
           <TouchableOpacity style={styles.button} onPress={this.handleRestart}>
             <MaterialCommunityIcons name="restart" size={20} color="#fff" />
-            <Text style={styles.buttonText}>Restart App</Text>
+            <Text style={styles.buttonText}>Try again</Text>
           </TouchableOpacity>
         </View>
       );

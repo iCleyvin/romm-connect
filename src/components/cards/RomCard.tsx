@@ -1,75 +1,66 @@
 // by Cleyvin
 
-import React from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, Dimensions } from 'react-native';
+import React, { memo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../store/AppContext';
 import { Rom } from '../../types';
-import { getRomCoverUrl, formatFileSize } from '../../utils';
-import { borderRadius, spacing } from '../../theme';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CARD_MARGIN = 4;
-const NUM_COLUMNS = 3;
-const CARD_WIDTH = (SCREEN_WIDTH - (NUM_COLUMNS + 1) * CARD_MARGIN * 2 - 32) / NUM_COLUMNS;
+import { romCoverUrl, romTitle } from '../../utils';
+import { borderRadius } from '../../theme';
+import RemoteImage from '../common/RemoteImage';
 
 interface Props {
   rom: Rom;
-  onPress: () => void;
-  aspectRatio?: string;
+  width: number;
+  onPress: (rom: Rom) => void;
 }
 
-const RomCard = ({ rom, onPress, aspectRatio = '2/3' }: Props) => {
-  const { colors, serverConfig, credentials } = useApp();
-  const coverUrl = getRomCoverUrl(serverConfig, rom, credentials || undefined);
+const COVER_ASPECT = 3 / 4;
 
-  const parts = aspectRatio.split('/');
-  const ratio = parts.length === 2 ? parseInt(parts[0]) / parseInt(parts[1]) : 2 / 3;
-  const cardHeight = CARD_WIDTH / ratio;
+const RomCard = ({ rom, width, onPress }: Props) => {
+  const { colors, serverUrl } = useApp();
+  const title = romTitle(rom);
 
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={() => onPress(rom)}
       activeOpacity={0.8}
-      style={[styles.container, { width: CARD_WIDTH }]}
+      style={{ width }}
+      accessibilityRole="button"
+      accessibilityLabel={title}
     >
-      <View style={[styles.coverContainer, { height: cardHeight, backgroundColor: colors.topLayer }]}>
-        {coverUrl ? (
-          <Image source={{ uri: coverUrl }} style={styles.cover} resizeMode="cover" />
-        ) : (
-          <View style={[styles.noCover, { backgroundColor: colors.primaryDark + '40' }]}>
-            <MaterialCommunityIcons name="gamepad-variant" size={20} color={colors.primary} style={{ marginBottom: 4 }} />
-            <Text style={[styles.noCoverText, { color: colors.text }]} numberOfLines={3}>
-              {rom.name}
-            </Text>
-          </View>
-        )}
+      <View style={[styles.coverContainer, { height: width / COVER_ASPECT, backgroundColor: colors.topLayer }]}>
+        <RemoteImage
+          sources={[romCoverUrl(serverUrl, rom), rom.url_cover]}
+          style={styles.cover}
+          fallback={
+            <View style={[styles.noCover, { backgroundColor: colors.primaryDark + '40' }]}>
+              <MaterialCommunityIcons name="gamepad-variant" size={22} color={colors.primary} />
+              <Text style={[styles.noCoverText, { color: colors.text }]} numberOfLines={3}>
+                {title}
+              </Text>
+            </View>
+          }
+        />
         {rom.rom_user?.now_playing && (
           <View style={[styles.playingBadge, { backgroundColor: colors.success }]}>
             <MaterialCommunityIcons name="play" size={10} color="#fff" />
           </View>
         )}
-        {rom.regions && rom.regions.length > 0 && (
-          <View style={[styles.regionBadge, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
+        {!!rom.regions?.length && (
+          <View style={styles.regionBadge}>
             <Text style={styles.regionText}>{rom.regions[0]}</Text>
           </View>
         )}
       </View>
       <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>
-        {rom.name}
-      </Text>
-      <Text style={[styles.size, { color: colors.textSecondary }]}>
-        {formatFileSize(rom.fs_size_bytes)}
+        {title}
       </Text>
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    margin: CARD_MARGIN,
-    marginBottom: spacing.sm,
-  },
   coverContainer: {
     borderRadius: borderRadius.md,
     overflow: 'hidden',
@@ -83,12 +74,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 6,
+    gap: 4,
   },
   noCoverText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '600',
     textAlign: 'center',
-    lineHeight: 12,
+    lineHeight: 13,
   },
   playingBadge: {
     position: 'absolute',
@@ -107,22 +99,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 1,
     borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
   regionText: {
     color: '#fff',
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '600',
   },
   name: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     marginTop: 4,
-    lineHeight: 14,
-  },
-  size: {
-    fontSize: 9,
-    marginTop: 2,
+    lineHeight: 15,
+    minHeight: 30,
   },
 });
 
-export default RomCard;
+export default memo(RomCard);

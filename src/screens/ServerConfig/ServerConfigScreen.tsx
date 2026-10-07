@@ -7,195 +7,149 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Switch,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../../store/AppContext';
-import { testConnection, createApiClient } from '../../api';
-import { STORAGE_KEYS } from '../../constants';
-import { RootStackParamList, ServerConfig } from '../../types';
-import { spacing, borderRadius, fontSize } from '../../theme';
+import { describeError, pairFromQr, probeServer } from '../../api';
+import { borderRadius, fontSize } from '../../theme';
+import QrScannerModal from '../../components/common/QrScannerModal';
 
-type Props = {
-  navigation: NativeStackNavigationProp<RootStackParamList, 'ServerConfig'>;
-};
-
-const ServerConfigScreen = ({ navigation }: Props) => {
-  const { colors, setServerConfig } = useApp();
+const ServerConfigScreen = () => {
+  const { colors, connectServer } = useApp();
   const insets = useSafeAreaInsets();
-  const [host, setHost] = useState('');
-  const [port, setPort] = useState('');
-  const [useHttps, setUseHttps] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [serverVersion, setServerVersion] = useState<string | null>(null);
+  const [address, setAddress] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [pairing, setPairing] = useState(false);
 
-  const handleTestConnection = async () => {
-    if (!host.trim()) {
-      Alert.alert('Error', 'Please enter a server address');
+  const handleConnect = async () => {
+    if (!address.trim()) {
+      setError('Enter your server address');
       return;
     }
-
-    setTesting(true);
-    setServerVersion(null);
-    const config: ServerConfig = { host: host.trim(), port: port.trim(), useHttps };
-
+    setConnecting(true);
+    setError(null);
     try {
-      const heartbeat = await testConnection(config);
-      const version = heartbeat.SYSTEM?.VERSION || 'unknown';
-      setServerVersion(version);
-      Alert.alert('Success', `Connected to RoMM v${version}`);
-    } catch (err: any) {
-      const msg = err.code === 'ECONNREFUSED'
-        ? 'Connection refused. Check the address and port.'
-        : err.message || 'Could not connect to server';
-      Alert.alert('Connection Failed', msg);
+      const { url, heartbeat } = await probeServer(address);
+      await connectServer(url, heartbeat);
+    } catch (err) {
+      setError(describeError(err, 'Could not connect to this server'));
     } finally {
-      setTesting(false);
+      setConnecting(false);
     }
   };
 
-  const handleSave = async () => {
-    if (!host.trim()) {
-      Alert.alert('Error', 'Please enter a server address');
-      return;
-    }
-
-    const config: ServerConfig = { host: host.trim(), port: port.trim(), useHttps };
-
-    setTesting(true);
+  const handleScanned = async (data: string) => {
+    setPairing(true);
+    setError(null);
     try {
-      await testConnection(config);
-      await AsyncStorage.setItem(STORAGE_KEYS.SERVER_CONFIG, JSON.stringify(config));
-      setServerConfig(config);
-      createApiClient(config);
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-    } catch {
-      Alert.alert('Error', 'Could not connect to server. Please check your settings.');
+      const { url, heartbeat, session } = await pairFromQr(data, address.trim() || null);
+      setScannerOpen(false);
+      await connectServer(url, heartbeat, session);
+    } catch (err) {
+      setScannerOpen(false);
+      setError(describeError(err, 'Pairing failed'));
     } finally {
-      setTesting(false);
+      setPairing(false);
     }
   };
 
   return (
     <KeyboardAvoidingView
       style={[styles.flex, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 40 }]}
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 }]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.logoContainer}>
-          <View style={[styles.logoCircle, { backgroundColor: colors.primary + '20' }]}>
-            <MaterialCommunityIcons name="server-network" size={48} color={colors.primary} />
+        <View style={styles.header}>
+          <View style={[styles.logo, { backgroundColor: colors.primary + '20' }]}>
+            <MaterialCommunityIcons name="gamepad-variant" size={48} color={colors.primary} />
           </View>
           <Text style={[styles.title, { color: colors.text }]}>RoMM Connect</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Configure your RoMM server to get started
+            Connect to your RoMM server to browse and play your library.
           </Text>
         </View>
 
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Server Address</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-            placeholder="e.g. 192.168.1.100 or romm.example.com"
-            placeholderTextColor={colors.placeholder}
-            value={host}
-            onChangeText={setHost}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-          />
-
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Port (optional)</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-            placeholder="e.g. 80, 443, 8080"
-            placeholderTextColor={colors.placeholder}
-            value={port}
-            onChangeText={setPort}
-            keyboardType="number-pad"
-          />
-
-          <View style={styles.switchRow}>
-            <Text style={[styles.switchLabel, { color: colors.text }]}>Use HTTPS</Text>
-            <Switch
-              value={useHttps}
-              onValueChange={setUseHttps}
-              trackColor={{ false: colors.gray, true: colors.primaryDark }}
-              thumbColor={useHttps ? colors.primary : colors.textSecondary}
-            />
+        {error && (
+          <View style={[styles.error, { backgroundColor: colors.error + '15' }]}>
+            <MaterialCommunityIcons name="alert-circle" size={18} color={colors.error} />
+            <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
           </View>
+        )}
 
-          {serverVersion && (
-            <View style={[styles.versionBadge, { backgroundColor: colors.success + '20' }]}>
-              <MaterialCommunityIcons name="check-circle" size={16} color={colors.success} />
-              <Text style={[styles.versionText, { color: colors.success }]}>
-                RoMM v{serverVersion}
-              </Text>
-            </View>
-          )}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Server address</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+          placeholder="romm.example.com or 192.168.1.10:8080"
+          placeholderTextColor={colors.placeholder}
+          value={address}
+          onChangeText={setAddress}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          returnKeyType="go"
+          onSubmitEditing={handleConnect}
+        />
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>
+          HTTPS is tried first. Start the address with http:// to force a plain connection.
+        </Text>
 
-          <TouchableOpacity
-            style={[styles.testButton, { borderColor: colors.primary }]}
-            onPress={handleTestConnection}
-            disabled={testing}
-          >
-            {testing ? (
-              <ActivityIndicator color={colors.primary} size="small" />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="connection" size={18} color={colors.primary} />
-                <Text style={[styles.testButtonText, { color: colors.primary }]}>Test Connection</Text>
-              </>
-            )}
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+          onPress={handleConnect}
+          disabled={connecting}
+        >
+          {connecting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Connect</Text>}
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.saveButton, { backgroundColor: colors.primary }]}
-            onPress={handleSave}
-            disabled={testing}
-          >
-            {testing ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="check" size={20} color="#fff" />
-                <Text style={styles.saveButtonText}>Connect to Server</Text>
-              </>
-            )}
-          </TouchableOpacity>
+        <View style={styles.dividerRow}>
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
         </View>
 
-        <Text style={[styles.footer, { color: colors.textSecondary }]}>
-          by Cleyvin @ 2026
+        <TouchableOpacity
+          style={[styles.secondaryButton, { borderColor: colors.primary }]}
+          onPress={() => {
+            setError(null);
+            setScannerOpen(true);
+          }}
+          disabled={connecting}
+        >
+          <MaterialCommunityIcons name="qrcode-scan" size={20} color={colors.primary} />
+          <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Scan pairing QR</Text>
+        </TouchableOpacity>
+        <Text style={[styles.hint, { color: colors.textSecondary, textAlign: 'center' }]}>
+          The pairing code from your server sets up the address and signs you in.
         </Text>
+
+        <Text style={[styles.footer, { color: colors.textSecondary }]}>by Cleyvin · 2026</Text>
       </ScrollView>
+
+      <QrScannerModal
+        visible={scannerOpen}
+        busy={pairing}
+        onScanned={handleScanned}
+        onClose={() => setScannerOpen(false)}
+      />
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  logoCircle: {
+  content: { flexGrow: 1, paddingHorizontal: 24 },
+  header: { alignItems: 'center', marginBottom: 32 },
+  logo: {
     width: 96,
     height: 96,
     borderRadius: 48,
@@ -203,23 +157,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  title: {
-    fontSize: fontSize.title,
-    fontWeight: '700',
+  title: { fontSize: fontSize.title, fontWeight: '700' },
+  subtitle: { fontSize: fontSize.md, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  error: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: borderRadius.md,
+    marginBottom: 16,
   },
-  subtitle: {
-    fontSize: fontSize.md,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  form: {
-    flex: 1,
-  },
+  errorText: { marginLeft: 8, fontSize: fontSize.md, flex: 1 },
   label: {
     fontSize: fontSize.sm,
     fontWeight: '600',
     marginBottom: 6,
-    marginTop: 16,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -230,64 +181,29 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     borderWidth: 1,
   },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    paddingVertical: 8,
-  },
-  switchLabel: {
-    fontSize: fontSize.lg,
-    fontWeight: '500',
-  },
-  versionBadge: {
-    flexDirection: 'row',
+  hint: { fontSize: fontSize.sm, marginTop: 8, lineHeight: 17 },
+  primaryButton: {
+    height: 50,
+    borderRadius: borderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: borderRadius.md,
-    marginTop: 16,
+    marginTop: 20,
   },
-  versionText: {
-    marginLeft: 8,
-    fontSize: fontSize.md,
-    fontWeight: '600',
-  },
-  testButton: {
+  primaryButtonText: { color: '#fff', fontSize: fontSize.lg, fontWeight: '700' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 20, gap: 12 },
+  divider: { flex: 1, height: StyleSheet.hairlineWidth },
+  dividerText: { fontSize: fontSize.sm },
+  secondaryButton: {
     height: 50,
     borderRadius: borderRadius.lg,
     borderWidth: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 24,
+    gap: 8,
   },
-  testButtonText: {
-    fontSize: fontSize.lg,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  saveButton: {
-    height: 50,
-    borderRadius: borderRadius.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  footer: {
-    textAlign: 'center',
-    marginTop: 32,
-    fontSize: fontSize.sm,
-  },
+  secondaryButtonText: { fontSize: fontSize.lg, fontWeight: '600' },
+  footer: { textAlign: 'center', marginTop: 'auto', paddingTop: 32, fontSize: fontSize.sm, opacity: 0.7 },
 });
 
 export default ServerConfigScreen;

@@ -5,13 +5,15 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../store/AppContext';
+import { IconName } from '../../theme';
 
 interface Props {
   title: string;
   subtitle?: string;
   onBack?: () => void;
   rightAction?: {
-    icon: string;
+    icon: IconName;
+    label: string;
     onPress: () => void;
   };
 }
@@ -24,7 +26,7 @@ const ScreenHeader = ({ title, subtitle, onBack, rightAction }: Props) => {
     <View style={[styles.container, { backgroundColor: colors.surface, paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
       <View style={styles.row}>
         {onBack ? (
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityLabel="Go back">
             <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
           </TouchableOpacity>
         ) : (
@@ -41,8 +43,12 @@ const ScreenHeader = ({ title, subtitle, onBack, rightAction }: Props) => {
           )}
         </View>
         {rightAction ? (
-          <TouchableOpacity onPress={rightAction.onPress} style={styles.rightButton}>
-            <MaterialCommunityIcons name={rightAction.icon as any} size={24} color={colors.text} />
+          <TouchableOpacity
+            onPress={rightAction.onPress}
+            style={styles.rightButton}
+            accessibilityLabel={rightAction.label}
+          >
+            <MaterialCommunityIcons name={rightAction.icon} size={24} color={colors.text} />
           </TouchableOpacity>
         ) : (
           <View style={styles.spacer} />

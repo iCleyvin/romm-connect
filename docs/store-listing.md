@@ -15,20 +15,20 @@ RoMM Connect lets you connect to YOUR own RoMM server and access YOUR personal l
 
 FEATURES
 
-• Server Connection — Connect to your own RoMM server via IP on your local network or VPN.
+• Server Connection — Connect to your own RoMM server by address or by scanning its pairing QR code.
 
 • Browse Your Library — View all platforms, search your collection, and enjoy cover art from IGDB.
 
 • Play Games — Launch any ROM directly from the app using the built-in EmulatorJS engine. Supports NES, SNES, N64, Game Boy, GBA, PlayStation, PSP, Genesis, Arcade/MAME, and more.
 
-• Cloud Saves — Save states sync to your server. Play on your phone, continue on your PC.
+• Cloud Saves — Saves and save states sync to your server. Play on your phone, continue on your PC.
 
 • Full Management — Upload ROMs, scan your library, manage collections, rate games, and track your progress.
 
 • Dark & Light Theme — Beautiful UI inspired by the RoMM web interface.
 
 REQUIREMENTS
-• A self-hosted RoMM server (v3.x or v4.x)
+• A self-hosted RoMM server (4.x)
 • Network access to your server (LAN, WiFi, or VPN)
 • Android 7.0 or higher
 
@@ -54,3 +54,6 @@ cleyvinos@gmail.com
 
 ## Privacy Policy URL
 https://icleyvin.github.io/romm-connect/privacy-policy.html
+
+## Terms of Use URL
+https://icleyvin.github.io/romm-connect/terms.html
